@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Vergessen · MemoryForge{% endblock %}
+{% block main %}
+<header class="mast">
+  <p class="eyebrow">Aufräumen</p>
+  <h1>Diese Erinnerung vergessen?</h1>
+</header>
+<article class="card">
+  <p class="body">{{ memory.text }}</p>
+  <div class="meta">
+    <span>{{ memory.kind_label }}</span>
+    <span>{{ memory.scope_label }}</span>
+  </div>
+</article>
+<form method="post" action="/memories/{{ memory.id }}/forget" class="composer-row">
+  <button type="submit" class="danger">Endgültig vergessen</button>
+  <a class="ghost-link" href="/?scope={{ memory.scope | urlencode }}">Abbrechen</a>
+</form>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen · MemoryForge{% endblock %}
+{% block main %}
+<header class="mast">
+  <p class="eyebrow">Werkbank</p>
+  <h1>Einstellungen</h1>
+  <p class="lede">Die Suche bleibt auf diesem Rechner. Ein Modell wird nur gerufen, wenn die KI an ist: beim Verdichten langer Texte und beim Dreaming.</p>
+</header>
+
+<form class="sheet" method="post" action="/settings">
+  <label class="check">
+    <input type="checkbox" name="enabled" value="1" {% if cfg.llm.enabled %}checked{% endif %}>
+    KI an
+  </label>
+
+  <label>
+    Anbieter
+    <select name="provider">
+      {% for key, provider in providers.items() %}
+      <option value="{{ key }}" {% if cfg.llm.provider == key %}selected{% endif %}>{{ provider.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>
+    API-Basis
+    <input name="base_url" value="{{ cfg.llm.base_url }}" placeholder="https://api.deepseek.com" autocomplete="off" spellcheck="false">
+  </label>
+
+  <label>
+    Modell
+    <select name="model_choice">
+      {% for row in catalog %}
+      <option value="{{ row.id }}" {% if cfg.llm.model == row.id %}selected{% endif %}>{{ row.label }} · {{ row.id }}</option>
+      {% endfor %}
+      <option value="__custom__" {% if not known %}selected{% endif %}>Andere ID</option>
+    </select>
+  </label>
+
+  <label>
+    Eigene Modell-ID
+    <input name="model_custom" value="{{ '' if known else cfg.llm.model }}" placeholder="z.B. deepseek-flash oder gpt-4.1-nano" autocomplete="off" spellcheck="false">
+  </label>
+  <p class="hint">Ist das Feld gefüllt, gewinnt diese ID gegenüber der Liste. Thinking bleibt für Extraktion aus, außer du schaltest es unten ein.</p>
+
+  <label class="check">
+    <input type="checkbox" name="thinking" value="1" {% if cfg.llm.thinking %}checked{% endif %}>
+    Thinking an
+  </label>
+
+  <label>
+    API-Key
+    <input name="api_key" type="password" value="" placeholder="{% if cfg.llm.api_key %}gesetzt, leer lassen zum Behalten{% else %}nicht gesetzt{% endif %}" autocomplete="off">
+  </label>
+  <label class="check">
+    <input type="checkbox" name="clear_key" value="1">
+    Key löschen
+  </label>
+
+  <div class="composer-row">
+    <button type="submit">Speichern</button>
+  </div>
+</form>
+
+<div class="sheet-actions">
+  <form method="post" action="/settings/test">
+    <button type="submit" class="ghost">Verbindung prüfen</button>
+  </form>
+  <form method="post" action="/dream">
+    <button type="submit" class="ghost">Jetzt träumen</button>
+  </form>
+</div>
+{% endblock %}

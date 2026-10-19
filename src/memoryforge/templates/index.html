@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Erinnerungen · MemoryForge{% endblock %}
+{% block main %}
+<header class="mast">
+  <p class="eyebrow">Notizbuch</p>
+  {% set ns = namespace(heading='Alle Erinnerungen') %}
+  {% if active == 'global' %}{% set ns.heading = 'Global' %}{% endif %}
+  {% for item in scopes %}
+    {% if item.scope == active %}{% set ns.heading = item.label %}{% endif %}
+  {% endfor %}
+  <h1>{{ ns.heading }}</h1>
+</header>
+
+<form class="search" method="get" action="/">
+  {% if active %}<input type="hidden" name="scope" value="{{ active }}">{% endif %}
+  <label class="sr" for="q">Suchen</label>
+  <input id="q" type="search" name="q" value="{{ q }}" placeholder="Suchen, auch nach Bedeutung" autocomplete="off">
+  <button type="submit">Suchen</button>
+</form>
+
+<form class="composer" method="post" action="/memories">
+  <label for="text">Neue Erinnerung</label>
+  <textarea id="text" name="text" rows="3" required placeholder="Ein Satz, der nächste Woche noch stimmt."></textarea>
+  <div class="composer-row">
+    <label class="inline">
+      Scope
+      <select name="scope">
+        <option value="global" {% if active == 'global' or not active %}selected{% endif %}>Global</option>
+        {% for item in scopes %}
+          {% if item.scope != 'global' %}
+          <option value="{{ item.scope }}" {% if active == item.scope %}selected{% endif %}>{{ item.label }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <label class="inline grow">
+      oder neuer Scope
+      <input name="scope_custom" placeholder="project:github.com/owner/repo" spellcheck="false" autocomplete="off">
+    </label>
+    <button type="submit">Merken</button>
+  </div>
+</form>
+
+{% if not rows %}
+<p class="empty">{% if q %}Dazu liegt nichts da.{% else %}Noch nichts in dieser Ansicht. Was der nächste Agent wissen sollte, schreibst du oben hin.{% endif %}</p>
+{% endif %}
+
+<section class="list" aria-label="Erinnerungen">
+  {% for row in rows %}
+  <article class="card {% if row.pinned %}is-pinned{% endif %}">
+    <p class="body">{{ row.text }}</p>
+    <div class="meta">
+      <span class="kind">{{ row.kind_label }}</span>
+      <span>{{ row.scope_label }}</span>
+      {% if row.pinned %}<span>Angeheftet</span>{% endif %}
+      <time datetime="{{ row.updated_at }}">{{ row.when }}</time>
+      {% if row.score is defined and q %}<span>{{ '%.2f'|format(row.score) }}</span>{% endif %}
+    </div>
+    <div class="actions">
+      <form method="post" action="/memories/{{ row.id }}/pin">
+        <input type="hidden" name="scope" value="{{ active }}">
+        <button type="submit">{{ "Lösen" if row.pinned else "Anheften" }}</button>
+      </form>
+      <a href="/memories/{{ row.id }}/forget">Vergessen</a>
+    </div>
+    <details>
+      <summary>Bearbeiten</summary>
+      <form method="post" action="/memories/{{ row.id }}">
+        <input type="hidden" name="scope" value="{{ active or row.scope }}">
+        <textarea name="text" rows="4">{{ row.text }}</textarea>
+        <button type="submit">Speichern</button>
+      </form>
+    </details>
+  </article>
+  {% endfor %}
+</section>
+<script src="/static/app.js"></script>
+{% endblock %}

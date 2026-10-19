@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MemoryForge{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <a class="mark" href="/">
+        <span class="mark-seal" aria-hidden="true"></span>
+        <span>MemoryForge</span>
+      </a>
+      <nav class="scopes" aria-label="Scopes">
+        <a class="scope {% if not active %}is-active{% endif %}" href="/">
+          <span>Alle</span><em>{{ total }}</em>
+        </a>
+        <a class="scope {% if active == 'global' %}is-active{% endif %}" href="/?scope=global">
+          <span>Global</span>
+        </a>
+        {% for item in scopes %}
+          {% if item.scope != 'global' %}
+          <a class="scope {% if active == item.scope %}is-active{% endif %}" href="/?scope={{ item.scope | urlencode }}" title="{{ item.scope }}">
+            <span>{{ item.label }}</span><em>{{ item.count }}</em>
+          </a>
+          {% endif %}
+        {% endfor %}
+      </nav>
+      <div class="rail-foot">
+        <a class="scope {% if active == 'settings' %}is-active{% endif %}" href="/settings">Einstellungen</a>
+        <form method="post" action="/backup">
+          <input type="hidden" name="secrets" value="1">
+          <button class="text-btn" type="submit">Backup</button>
+        </form>
+      </div>
+    </aside>
+    <main class="page">
+      {% if msg %}<p class="banner" role="status">{{ msg }}</p>{% endif %}
+      {% if err %}<p class="banner is-err" role="alert">{{ err }}</p>{% endif %}
+      {% block main %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>
