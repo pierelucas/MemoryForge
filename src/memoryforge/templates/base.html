@@ -4,22 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MemoryForge{% endblock %}</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v=2">
 </head>
 <body>
   <div class="shell">
     <aside class="rail">
       <a class="mark" href="/">
-        <span class="mark-seal" aria-hidden="true"></span>
+        <span class="mark-seal" aria-hidden="true">M</span>
         <span>MemoryForge</span>
       </a>
+      <p class="rail-label">Scopes</p>
       <nav class="scopes" aria-label="Scopes">
+        {% set ns = namespace(global_count=0) %}
+        {% for item in scopes %}
+          {% if item.scope == 'global' %}{% set ns.global_count = item.count %}{% endif %}
+        {% endfor %}
         <a class="scope {% if not active %}is-active{% endif %}" href="/">
           <span>Alle</span><em>{{ total }}</em>
         </a>
         <a class="scope {% if active == 'global' %}is-active{% endif %}" href="/?scope=global">
-          <span>Global</span>
+          <span>Global</span><em>{{ ns.global_count }}</em>
         </a>
         {% for item in scopes %}
           {% if item.scope != 'global' %}
@@ -33,7 +38,7 @@
         <a class="scope {% if active == 'settings' %}is-active{% endif %}" href="/settings">Einstellungen</a>
         <form method="post" action="/backup">
           <input type="hidden" name="secrets" value="1">
-          <button class="text-btn" type="submit">Backup</button>
+          <button class="text-btn" type="submit" title="ZIP mit Datenbank und API-Key">Backup</button>
         </form>
       </div>
     </aside>

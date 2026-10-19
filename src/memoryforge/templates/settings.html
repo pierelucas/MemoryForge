@@ -2,59 +2,76 @@
 {% block title %}Einstellungen · MemoryForge{% endblock %}
 {% block main %}
 <header class="mast">
-  <p class="eyebrow">Werkbank</p>
-  <h1>Einstellungen</h1>
-  <p class="lede">Die Suche bleibt auf diesem Rechner. Ein Modell wird nur gerufen, wenn die KI an ist: beim Verdichten langer Texte und beim Dreaming.</p>
+  <div class="mast-row">
+    <h1>Einstellungen</h1>
+  </div>
+  <p class="lede">Suche und Embeddings bleiben auf diesem Rechner. Ein Modell wird nur gerufen, wenn die KI an ist.</p>
 </header>
 
-<form class="sheet" method="post" action="/settings">
-  <label class="check">
+<form class="sheet" method="post" action="/settings" id="settings-form">
+  <label class="switch">
     <input type="checkbox" name="enabled" value="1" {% if cfg.llm.enabled %}checked{% endif %}>
-    KI an
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span>
+      <strong>KI an</strong>
+      <small>Lange Notizen werden dann verdichtet, Widersprüche ersetzt. Kurze neue Sätze bleiben wörtlich. Schlägt die API fehl, wird der Text trotzdem gespeichert.</small>
+    </span>
   </label>
 
-  <label>
-    Anbieter
-    <select name="provider">
-      {% for key, provider in providers.items() %}
-      <option value="{{ key }}" {% if cfg.llm.provider == key %}selected{% endif %}>{{ provider.label }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  <div class="fields">
+    <label>
+      Anbieter
+      <select name="provider" id="provider">
+        {% for key, provider in providers.items() %}
+        <option value="{{ key }}" data-url="{{ provider.base_url }}" {% if cfg.llm.provider == key %}selected{% endif %}>{{ provider.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
 
-  <label>
-    API-Basis
-    <input name="base_url" value="{{ cfg.llm.base_url }}" placeholder="https://api.deepseek.com" autocomplete="off" spellcheck="false">
-  </label>
+    <label>
+      API-Basis
+      <input id="base_url" name="base_url" value="{{ cfg.llm.base_url }}" placeholder="https://api.deepseek.com" autocomplete="off" spellcheck="false">
+    </label>
 
-  <label>
-    Modell
-    <select name="model_choice">
-      {% for row in catalog %}
-      <option value="{{ row.id }}" {% if cfg.llm.model == row.id %}selected{% endif %}>{{ row.label }} · {{ row.id }}</option>
-      {% endfor %}
-      <option value="__custom__" {% if not known %}selected{% endif %}>Andere ID</option>
-    </select>
-  </label>
+    <label>
+      Modell
+      <select name="model_choice" id="model_choice">
+        {% for row in catalog %}
+        <option value="{{ row.id }}" data-provider="{{ row.provider }}" data-url="{{ row.base_url }}" {% if cfg.llm.model == row.id %}selected{% endif %}>{{ row.label }}</option>
+        {% endfor %}
+        <option value="__custom__" {% if not known %}selected{% endif %}>Andere ID</option>
+      </select>
+    </label>
 
-  <label>
-    Eigene Modell-ID
-    <input name="model_custom" value="{{ '' if known else cfg.llm.model }}" placeholder="z.B. deepseek-flash oder gpt-4.1-nano" autocomplete="off" spellcheck="false">
-  </label>
-  <p class="hint">Ist das Feld gefüllt, gewinnt diese ID gegenüber der Liste. Thinking bleibt für Extraktion aus, außer du schaltest es unten ein.</p>
+    <label>
+      Eigene Modell-ID
+      <input id="model_custom" name="model_custom" value="{{ '' if known else cfg.llm.model }}" placeholder="nur ausfüllen, wenn die Liste nicht passt" autocomplete="off" spellcheck="false">
+    </label>
+  </div>
+  <p class="hint">Eine eigene ID gewinnt gegen die Liste. Die ID muss der Anbieter kennen, der Anzeigename in der Liste ist nur eine Beschriftung.</p>
 
-  <label class="check">
+  <label class="switch">
     <input type="checkbox" name="thinking" value="1" {% if cfg.llm.thinking %}checked{% endif %}>
-    Thinking an
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span>
+      <strong>Thinking</strong>
+      <small>Für Extraktion aus lassen. Manche Modelle schalten es sonst selbst ein.</small>
+    </span>
   </label>
 
-  <label>
-    API-Key
-    <input name="api_key" type="password" value="" placeholder="{% if cfg.llm.api_key %}gesetzt, leer lassen zum Behalten{% else %}nicht gesetzt{% endif %}" autocomplete="off">
-  </label>
-  <label class="check">
+  <div class="fields">
+    <label>
+      API-Key
+      <input name="api_key" type="password" value="" placeholder="{% if cfg.llm.api_key %}gesetzt, leer lassen zum Behalten{% else %}nicht gesetzt{% endif %}" autocomplete="off">
+    </label>
+  </div>
+  <label class="switch is-quiet">
     <input type="checkbox" name="clear_key" value="1">
-    Key löschen
+    <span class="switch-ui" aria-hidden="true"></span>
+    <span>
+      <strong>Key löschen</strong>
+      <small>Entfernt den gespeicherten Schlüssel beim Speichern.</small>
+    </span>
   </label>
 
   <div class="composer-row">
@@ -62,12 +79,32 @@
   </div>
 </form>
 
-<div class="sheet-actions">
-  <form method="post" action="/settings/test">
-    <button type="submit" class="ghost">Verbindung prüfen</button>
-  </form>
-  <form method="post" action="/dream">
-    <button type="submit" class="ghost">Jetzt träumen</button>
-  </form>
-</div>
+<section class="sheet">
+  <h2>Prüfen und träumen</h2>
+  <p class="hint">Die Prüfung macht einen kurzen Aufruf. Träumen fasst Dubletten zusammen und markiert die alten Zeilen als überholt. Von hier aus über alle Scopes, jeweils innerhalb eines Scopes.</p>
+  <div class="composer-row">
+    <form method="post" action="/settings/test">
+      <button type="submit" class="ghost">Verbindung prüfen</button>
+    </form>
+    <form method="post" action="/dream">
+      <button type="submit" class="ghost">Träumen</button>
+    </form>
+  </div>
+</section>
+
+<section class="sheet">
+  <h2>Umzug</h2>
+  <p class="hint">Das ZIP enthält Datenbank und Konfiguration. Mit Key kannst du auf dem neuen Rechner direkt weiterarbeiten. Ohne Key teilst du das Archiv leichter, musst den Schlüssel dort neu eintragen.</p>
+  <div class="composer-row">
+    <form method="post" action="/backup">
+      <input type="hidden" name="secrets" value="1">
+      <button type="submit" class="ghost">Backup mit Key</button>
+    </form>
+    <form method="post" action="/backup">
+      <input type="hidden" name="secrets" value="0">
+      <button type="submit" class="ghost">Backup ohne Key</button>
+    </form>
+  </div>
+</section>
+<script src="/static/app.js?v=2"></script>
 {% endblock %}

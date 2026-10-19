@@ -2,18 +2,18 @@
 {% block title %}Vergessen · MemoryForge{% endblock %}
 {% block main %}
 <header class="mast">
-  <p class="eyebrow">Aufräumen</p>
-  <h1>Diese Erinnerung vergessen?</h1>
+  <div class="mast-row"><h1>Vergessen?</h1></div>
+  <p class="lede">Die Zeile verschwindet aus Suche, Liste und MCP. In der Datenbank bleibt sie stehen, sie wird nicht hart gelöscht.</p>
 </header>
 <article class="card">
   <p class="body">{{ memory.text }}</p>
   <div class="meta">
-    <span>{{ memory.kind_label }}</span>
-    <span>{{ memory.scope_label }}</span>
+    <span class="pill">{{ memory.kind_label }}</span>
+    <span class="pill">{{ memory.scope_label }}</span>
   </div>
 </article>
-<form method="post" action="/memories/{{ memory.id }}/forget" class="composer-row">
-  <button type="submit" class="danger">Endgültig vergessen</button>
+<form method="post" action="/memories/{{ memory.id }}/forget" class="composer-row confirm-row">
+  <button type="submit" class="danger">Vergessen</button>
   <a class="ghost-link" href="/?scope={{ memory.scope | urlencode }}">Abbrechen</a>
 </form>
 {% endblock %}

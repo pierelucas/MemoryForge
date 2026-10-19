@@ -1,32 +1,48 @@
 # MemoryForge
 
-Lokales Gedächtnis für Coding-Agenten. OpenCode, Cursor, Claude Code und jeder andere MCP-Client lesen und schreiben dieselben Fakten. Die Daten liegen in einer SQLite-Datei auf deinem Rechner. Ein Sprachmodell ist optional und wird nur beim Verdichten und beim Dreaming gerufen, nie bei der Suche.
+Local memory for coding agents. OpenCode, Cursor, Claude Code, and any other MCP client read and write the same short facts. The data is one SQLite file on your machine. A language model is optional, and search never calls one.
 
-## Was es tut
+The notebook UI is in German. [Deutsche Anleitung](README.de.md).
 
-- speichert kurze, dauerhafte Fakten, keine ganzen Chatverläufe
-- sucht per lokalem Embedding und Volltext
-- trennt `global` (du) von `project:host/owner/repo` (ein Repository)
-- spricht MCP, über stdio und über HTTP
-- zeigt die Erinnerungen in einem Notizbuch auf `127.0.0.1`
-- packt alles in ein ZIP, damit du auf einen anderen Rechner umziehen kannst
+## What it stores
 
-## Was es nicht tut
+Short facts that should still be true next week: a preference, a decision, a convention, a lesson from a bug. Not chat logs, not the current task, not secrets.
 
-- kein Cloud-Konto, kein Vektor-Server, kein Neo4j
-- die Suche schickt nichts aus dem Haus
-- Secrets (`api_key=…`, `sk-…`, `ghp_…`, private Keys) werden vor dem Speichern geschwärzt, aber du solltest sie gar nicht erst hineingeben
-- Dreaming erfindet keine Fakten. Es darf nur zusammenfassen, was schon dasteht
+Each fact has a scope.
 
-## Voraussetzungen
+| Scope | Means |
+|---|---|
+| `global` | about you, in every repo |
+| `project:host/owner/repo` | about that repository |
 
-- Python 3.10 oder neuer, installiert über [uv](https://docs.astral.sh/uv/)
-- Git, wenn Projekt-Scopes automatisch erkannt werden sollen
-- optional ein API-Key für DeepSeek oder eine andere OpenAI-kompatible API
+A project search also returns `global`. A global search does not return project facts. Writing, replacing, and dreaming stay inside one scope, so a repo fact cannot overwrite a preference.
 
-Beim ersten echten Embedding lädt `fastembed` das Modell `BAAI/bge-small-en-v1.5` einmalig in den lokalen Cache. Ohne dieses Paket sucht MemoryForge weiter, dann nur über einen Hash-Fallback plus Volltext.
+If you omit the scope, the CLI and a stdio MCP session run `git remote get-url origin` in the working directory.
 
-## Neu installieren
+| Remote | Scope |
+|---|---|
+| `git@github.com:owner/repo.git` | `project:github.com/owner/repo` |
+| `https://github.com/owner/repo.git` | same |
+| no git, or no `origin` | `global` |
+
+The HTTP server cannot see your repo. Pass `scope` yourself. It binds to `127.0.0.1` unless you change that.
+
+## What it does not do
+
+No account, no hosted vector database. Search and embeddings stay local. Strings that look like secrets (`api_key=…`, `sk-…`, `ghp_…`, private keys) are redacted before they are stored. Do not put secrets in memory anyway.
+
+Dreaming only merges or retires facts that are already stored. It does not invent new ones. With the model switched off, dreaming changes nothing.
+
+## Requirements
+
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/)
+- Git, if you want project scopes detected for you
+- optional: an API key for DeepSeek or another OpenAI-compatible API
+
+The first real embedding downloads `BAAI/bge-small-en-v1.5` into the local cache. Without `fastembed`, search still works, using a hash embedder plus full text. That mode is for tests and for machines where the model download is not wanted. Recall is weaker.
+
+## Install
 
 ```bash
 git clone https://github.com/pierelucas/MemoryForge.git
@@ -34,60 +50,60 @@ cd MemoryForge
 ./install.sh
 ```
 
-Das Skript installiert `uv`, falls es fehlt, und danach `memoryforge` als Kommando. Mit einem Terminal fragt es, ob du sofort eine KI hinterlegen willst. `--yes` überspringt die Fragen.
+The script installs `uv` if it is missing, then installs the `memoryforge` command. In a terminal it asks whether to configure a model now. `--yes` skips the questions.
 
 ```bash
 ./install.sh --yes --service
 ```
 
-`--service` richtet einen Benutzerdienst ein: systemd unter Linux, launchd unter macOS. Windows startest du im Vordergrund mit `memoryforge serve`.
-
-Pfade danach:
+`--service` installs a user service: systemd on Linux, launchd on macOS. On Windows, run `memoryforge serve` in the foreground.
 
 | | |
 |---|---|
-| Konfiguration | `~/.config/memoryforge/config.toml` (Rechte `0600`) |
-| Datenbank | `~/.local/share/memoryforge/memory.db` |
-| Dienst-Log | `~/.local/share/memoryforge/serve.log` |
+| Config | `~/.config/memoryforge/config.toml` (mode `0600`) |
+| Database | `~/.local/share/memoryforge/memory.db` |
+| Service log | `~/.local/share/memoryforge/serve.log` |
 
-Unter `XDG_CONFIG_HOME` und `XDG_DATA_HOME` gelten diese stattdessen.
+`XDG_CONFIG_HOME` and `XDG_DATA_HOME` replace those roots.
 
-## Oberfläche und Dienst
+## Notebook
 
 ```bash
-memoryforge            # Dienst starten, falls er nicht läuft, und die Adresse zeigen
-memoryforge ui         # Notizbuch im Browser öffnen
-memoryforge serve      # im Vordergrund
+memoryforge            # start the server if it is down, print the URL
+memoryforge ui         # open the notebook
+memoryforge serve      # foreground
 memoryforge serve --detach
 memoryforge stop
 memoryforge doctor
 ```
 
-Standardadresse: <http://127.0.0.1:4737/>
+Default URL: <http://127.0.0.1:4737/>
 
-Die Oberfläche ist ein Notizbuch: links die Scopes, oben die Suche, darunter neue Erinnerungen. Anheften hält einen Fakt in der Session-Karte. Vergessen blendet ihn aus, löscht die Zeile aber nicht hart aus der Datei. Unter Einstellungen schaltest du die KI an, wählst Anbieter und Modell und prüfst die Verbindung.
+The sidebar is the scope list. **Alle** shows everything. **Global** shows only global facts. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both.
 
-`autostart` in der Konfiguration merkt sich nur deinen Wunsch. Der tatsächliche Login-Start kommt von `memoryforge install-service` bzw. `./install.sh --service`.
+**Merken** stores one fact in the scope selected above the button. **Anderer Scope** is for a scope that does not exist yet. A git URL in that field is normalized. `/` focuses search. Ctrl+Enter or Cmd+Enter submits the note you are typing.
 
-## KI an, aus, Modellwahl
+**Anheften** keeps a fact on the session card (`memory_brief`). **Vergessen** hides a fact from search, the list, and MCP. The row stays in the file. **Bearbeiten** replaces the text and refreshes the embedding. The form does not set a kind. With the model off, UI notes are stored as `fact`. With the model on, a longer note may be split or classified.
 
-Aus ist der Standard. Dann speichert `add` den Text wörtlich, sofern er nicht schon exakt existiert.
+`autostart` in the config only records the wish. Login startup comes from `memoryforge install-service` or `./install.sh --service`.
 
-An heißt: ein einzelner kurzer Satz ohne starken Nachbarn wird ebenfalls wörtlich gespeichert. Längere Notizen und Widersprüche gehen an das Modell. Schlägt die API fehl, bleibt der Text trotzdem erhalten.
+## Model
 
-Die Suche ruft die API nie.
+Off is the default. `add` then stores the text as written, unless that exact text already exists in the scope.
 
-Mitgelieferte Modelle:
+On: one short sentence with no close neighbor is still stored as written. Longer notes, and notes that sit next to a similar fact, go to the model. If the API fails, the original text is stored anyway.
 
-| Anzeige | Modell-ID | Anbieter |
+Search does not call the API.
+
+| Label in the UI | Model id | Provider |
 |---|---|---|
 | DeepSeek V4.1 Flash | `deepseek-flash` | `https://api.deepseek.com` |
-| DeepSeek V4 Pro | `deepseek-v4-pro` | dieselbe URL |
+| DeepSeek V4 Pro | `deepseek-v4-pro` | same |
 | GPT-4.1 nano | `gpt-4.1-nano` | `https://api.openai.com/v1` |
-| GPT-4.1 mini | `gpt-4.1-mini` | dieselbe URL |
-| GPT-4o mini | `gpt-4o-mini` | dieselbe URL |
+| GPT-4.1 mini | `gpt-4.1-mini` | same |
+| GPT-4o mini | `gpt-4o-mini` | same |
 
-Eine andere ID, zum Beispiel ein kleineres GPT-Modell oder ein lokaler OpenAI-kompatibler Server, trägst du als eigene Modell-ID ein. Ist das Feld gefüllt, gewinnt es gegenüber der Liste.
+The label is just a label. The provider has to accept the id. Another id, or a local OpenAI-compatible server, goes in **Eigene Modell-ID**. A filled custom id wins over the list. Choosing a listed model clears the custom field.
 
 ```bash
 memoryforge config models
@@ -100,18 +116,14 @@ memoryforge config set llm.thinking false
 memoryforge config show
 ```
 
-`config show` maskiert den Key. Thinking lass für Extraktion aus. Der Schalter ist nur da, weil manche Modelle ihn sonst selbst einschalten.
+`config show` masks the key. Leave thinking off for extraction.
 
-Das Embedding-Modell ist nicht dieses Menü. Es bleibt lokal (`BAAI/bge-small-en-v1.5`). Ein Wechsel der Chat-Modelle ändert alte Vektoren nicht. Ein Wechsel des Embedding-Modells schon: danach `memoryforge reembed`.
-
-Dreaming fasst Dubletten innerhalb eines Scopes zusammen und markiert die alten Zeilen als überholt.
+The embedding model is not this menu. It stays `BAAI/bge-small-en-v1.5` on disk. Changing the chat model does not touch old vectors. Changing the embedding model does: run `memoryforge reembed` afterwards.
 
 ```bash
 memoryforge dream
 memoryforge dream --scope global
 ```
-
-Ist die KI aus, ändert Dreaming nichts.
 
 ## CLI
 
@@ -130,13 +142,11 @@ memoryforge forget <id>
 memoryforge doctor
 ```
 
-Ohne `--scope` nimmt die CLI den `origin` des aktuellen Git-Repos, sonst `global`. Ein Remote `git@github.com:owner/repo.git` wird zu `project:github.com/owner/repo`.
-
 ## OpenCode
 
-Empfohlen ist stdio. OpenCode startet den Prozess im Projektordner, MemoryForge liest den Git-Remote und legt den Scope selbst fest. Die Datei ist dieselbe, die die Oberfläche benutzt.
+stdio is the one to use. OpenCode starts the process in the project directory, MemoryForge reads `origin`, and both sides use the same database as the notebook.
 
-In `~/.config/opencode/opencode.json` (OpenCode 2) oder in der Projekt-Config:
+`~/.config/opencode/opencode.json` (OpenCode 2), or the project config:
 
 ```json
 {
@@ -152,7 +162,7 @@ In `~/.config/opencode/opencode.json` (OpenCode 2) oder in der Projekt-Config:
 }
 ```
 
-Ältere Configs ohne `servers`:
+Older configs, without `servers`:
 
 ```json
 {
@@ -166,7 +176,7 @@ In `~/.config/opencode/opencode.json` (OpenCode 2) oder in der Projekt-Config:
 }
 ```
 
-Damit der Agent die Werkzeuge auch benutzt, ein kurzer Abschnitt in der Projektanweisung:
+The tools do nothing if the agent never calls them. Put this in the project instructions:
 
 ```text
 At session start call memory_brief. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
@@ -174,26 +184,24 @@ When you learn a durable preference, decision, convention, or debug lesson, call
 Do not store secrets, tokens, or ephemeral task state.
 ```
 
-Werkzeuge:
-
-| Werkzeug | Zweck |
+| Tool | Use |
 |---|---|
-| `memory_brief` | Session-Start: Angeheftetes und die letzten Fakten |
-| `memory_search` | Bedeutung plus Volltext |
-| `memory_add` | Fakt oder Rohtext speichern |
-| `memory_list` | Aktive Einträge |
-| `memory_pin` | An die Karte heften oder lösen |
-| `memory_forget` | Ausblenden |
+| `memory_brief` | session start: pinned facts, then recent ones |
+| `memory_search` | meaning plus full text |
+| `memory_add` | store a fact or a raw note |
+| `memory_list` | active rows |
+| `memory_pin` | pin or unpin |
+| `memory_forget` | hide a row |
 
-Für Cursor, Claude Code und andere Clients auf **diesem** Rechner geht dasselbe stdio-Kommando. Für einen Client, der keinen Prozess starten kann, zuerst `memoryforge` und dann die HTTP-Adresse:
+Cursor, Claude Code, and other clients on this machine can use the same stdio command. A client that cannot start a process uses HTTP, after `memoryforge` is running:
 
 ```text
 http://127.0.0.1:4737/mcp
 ```
 
-Der HTTP-Dienst errät den Projektordner nicht, weil er nicht in deinem Repo steht. Dann musst du `scope` mitschicken. Der Dienst bindet standardmäßig nur an `127.0.0.1`.
+There is no authentication on that port. Do not bind it to a shared network.
 
-## Konfiguration
+## Config
 
 ```toml
 [server]
@@ -214,43 +222,45 @@ api_key = ""
 model = "BAAI/bge-small-en-v1.5"
 ```
 
-Felder setzt du mit `memoryforge config set section.feld wert`. Boolesche Werte: `true`, `false`, `ja`, `nein`, `an`, `aus`.
+`memoryforge config set section.field value`. Booleans: `true`, `false`, `ja`, `nein`, `an`, `aus`.
 
-## Backup und Umzug
+## Move to another machine
 
 ```bash
 memoryforge backup
 memoryforge backup --without-secrets -o ~/merk.zip
 ```
 
-Das ZIP enthält genau drei Dateien:
+The zip contains three files, nothing else:
 
 ```text
-manifest.json    Formatversion, Zeitpunkt, Embedding-Modell
-config.toml      inklusive API-Key, außer mit --without-secrets
-memory.db        SQLite-Backup, keine offene WAL-Datei
+manifest.json    format version, time, embedding model
+config.toml      includes the API key, unless you passed --without-secrets
+memory.db        SQLite backup, not a live WAL
 ```
 
-Nicht enthalten: das Programm, der Modell-Cache, Logs. Der Key steht im Klartext im ZIP, sonst müsstest du ihn auf dem neuen Rechner wieder eintippen. Gib so ein Archiv nicht weiter. `--without-secrets` leert den Key.
+The program, the model cache, and logs are not in the zip. The key is plaintext in the archive, so you do not have to type it again. Do not send that file around. `--without-secrets` blanks the key.
 
-Auf dem neuen Rechner, im geklonten Repo:
+On the new machine, from a fresh clone:
 
 ```bash
 ./install.sh --restore memoryforge-backup-20261019-1504.zip
 ```
 
-Ist das Kommando schon installiert, reicht:
+If the command is already installed:
 
 ```bash
 memoryforge restore memoryforge-backup-20261019-1504.zip
 memoryforge
 ```
 
-Der laufende Dienst wird vorher gestoppt. Die Dateien landen in den üblichen Ordnern **dieses** Rechners, alte Home-Pfade werden nicht mitkopiert. Stimmt das Embedding-Modell im Manifest nicht mit der lokalen Config überein, sagt das Restore das, und du führst `memoryforge reembed` aus.
+Restore stops a running server first. Files land in the usual directories on **this** machine. Old home paths are not copied. If the embedding model in the manifest does not match the local config, restore says so. Run `memoryforge reembed`.
 
-Ein fremdes ZIP mit zusätzlichen Pfaden oder `..` wird abgelehnt. Formatversionen, die dieses Programm nicht kennt, ebenfalls, und zwar bevor etwas überschrieben wird.
+A zip with extra paths or `..` is rejected. So is a format version this build does not know. Both checks happen before anything is overwritten.
 
-## Deinstallation
+The notebook can download the same zip: **Backup** in the sidebar includes the key. Settings has a second button without it.
+
+## Uninstall
 
 ```bash
 memoryforge stop
@@ -258,9 +268,9 @@ uv tool uninstall memoryforge
 rm -rf ~/.config/memoryforge ~/.local/share/memoryforge
 ```
 
-Unter Linux zusätzlich `systemctl --user disable --now memoryforge` und die Unit unter `~/.config/systemd/user/memoryforge.service` löschen. Unter macOS den LaunchAgent `~/Library/LaunchAgents/com.memoryforge.plist` mit `launchctl unload` entfernen.
+On Linux, also `systemctl --user disable --now memoryforge` and delete `~/.config/systemd/user/memoryforge.service`. On macOS, `launchctl unload` the agent `~/Library/LaunchAgents/com.memoryforge.plist`.
 
-## Entwicklung
+## Development
 
 ```bash
 uv venv
@@ -269,8 +279,8 @@ pytest
 memoryforge serve
 ```
 
-Tests zwingen das Embedding auf den Hash-Fallback (`MEMORYFORGE_EMBED=hash`) und schreiben nicht in dein echtes Notizbuch.
+Tests force the hash embedder (`MEMORYFORGE_EMBED=hash`) and do not touch your real database.
 
-## Lizenz
+## License
 
-MIT, siehe [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

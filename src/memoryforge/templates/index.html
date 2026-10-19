@@ -1,26 +1,74 @@
 {% extends "base.html" %}
 {% block title %}Erinnerungen · MemoryForge{% endblock %}
+{% macro card(row) %}
+<article class="card {% if row.pinned %}is-pinned{% endif %}">
+  <p class="body">{{ row.text }}</p>
+  <div class="card-foot">
+    <div class="meta">
+      <span class="pill">{{ row.kind_label }}</span>
+      {% if not active or active != row.scope %}
+      <span class="pill" title="{{ row.scope }}">{{ row.scope_label }}</span>
+      {% endif %}
+      {% if row.pinned %}<span class="pill is-accent">Angeheftet</span>{% endif %}
+      <time datetime="{{ row.updated_at }}">{{ row.when }}</time>
+      {% if row.score is defined and q %}<span class="pill">{{ '%.2f'|format(row.score) }}</span>{% endif %}
+    </div>
+    <div class="actions">
+      <form method="post" action="/memories/{{ row.id }}/pin">
+        <input type="hidden" name="scope" value="{{ active }}">
+        <button type="submit">{{ "Lösen" if row.pinned else "Anheften" }}</button>
+      </form>
+      <a href="/memories/{{ row.id }}/forget">Vergessen</a>
+    </div>
+  </div>
+  <details>
+    <summary>Bearbeiten</summary>
+    <form method="post" action="/memories/{{ row.id }}">
+      <input type="hidden" name="scope" value="{{ active or row.scope }}">
+      <textarea name="text" rows="4">{{ row.text }}</textarea>
+      <button type="submit">Speichern</button>
+    </form>
+  </details>
+</article>
+{% endmacro %}
 {% block main %}
 <header class="mast">
-  <p class="eyebrow">Notizbuch</p>
-  {% set ns = namespace(heading='Alle Erinnerungen') %}
+  {% set ns = namespace(heading='Alle', full='') %}
   {% if active == 'global' %}{% set ns.heading = 'Global' %}{% endif %}
   {% for item in scopes %}
-    {% if item.scope == active %}{% set ns.heading = item.label %}{% endif %}
+    {% if item.scope == active %}{% set ns.heading = item.label %}{% set ns.full = item.scope %}{% endif %}
   {% endfor %}
-  <h1>{{ ns.heading }}</h1>
+  <div class="mast-row">
+    <h1>{{ ns.heading }}</h1>
+    <p class="count">{{ rows|length + (also|length if also else 0) }}</p>
+  </div>
+  {% if q %}
+  <p class="lede">{{ rows|length }} Treffer für „{{ q }}“.</p>
+  {% elif active == 'global' %}
+  <p class="lede">Gilt in jedem Projekt. Agenten lesen das hier mit, egal in welchem Repo sie stehen.</p>
+  {% elif active %}
+  <p class="lede" title="{{ ns.full }}">Dieses Repository. Darunter die globalen Fakten, die hier mitgelesen werden.</p>
+  {% else %}
+  <p class="lede">Alles, was gespeichert ist. Die Suche eines Projekts sieht nur dieses Projekt plus Global.</p>
+  {% endif %}
 </header>
 
 <form class="search" method="get" action="/">
   {% if active %}<input type="hidden" name="scope" value="{{ active }}">{% endif %}
   <label class="sr" for="q">Suchen</label>
-  <input id="q" type="search" name="q" value="{{ q }}" placeholder="Suchen, auch nach Bedeutung" autocomplete="off">
+  <div class="search-field">
+    <input id="q" type="search" name="q" value="{{ q }}" placeholder="Suchen" autocomplete="off">
+    <kbd class="hint-key" aria-hidden="true">/</kbd>
+  </div>
   <button type="submit">Suchen</button>
+  {% if q %}
+  <a class="text-link" href="/{% if active %}?scope={{ active | urlencode }}{% endif %}">Leeren</a>
+  {% endif %}
 </form>
 
 <form class="composer" method="post" action="/memories">
   <label for="text">Neue Erinnerung</label>
-  <textarea id="text" name="text" rows="3" required placeholder="Ein Satz, der nächste Woche noch stimmt."></textarea>
+  <textarea id="text" name="text" rows="3" required placeholder="Ein Satz, der nächste Woche noch stimmt. Keine Keys."></textarea>
   <div class="composer-row">
     <label class="inline">
       Scope
@@ -33,46 +81,35 @@
         {% endfor %}
       </select>
     </label>
-    <label class="inline grow">
-      oder neuer Scope
-      <input name="scope_custom" placeholder="project:github.com/owner/repo" spellcheck="false" autocomplete="off">
-    </label>
     <button type="submit">Merken</button>
   </div>
+  <details class="scope-extra">
+    <summary>Anderer Scope</summary>
+    <label class="inline">
+      Neuer oder voller Name
+      <input name="scope_custom" placeholder="project:github.com/owner/repo" spellcheck="false" autocomplete="off">
+    </label>
+    <p class="hint">Wenn das Feld gefüllt ist, gilt es statt der Auswahl oben. Eine Git-URL wird umgeschrieben.</p>
+  </details>
 </form>
 
-{% if not rows %}
-<p class="empty">{% if q %}Dazu liegt nichts da.{% else %}Noch nichts in dieser Ansicht. Was der nächste Agent wissen sollte, schreibst du oben hin.{% endif %}</p>
+{% if not rows and not also %}
+<p class="empty">{% if q %}Nichts gefunden.{% else %}Noch nichts in dieser Ansicht.{% endif %}</p>
 {% endif %}
 
+{% if rows %}
 <section class="list" aria-label="Erinnerungen">
-  {% for row in rows %}
-  <article class="card {% if row.pinned %}is-pinned{% endif %}">
-    <p class="body">{{ row.text }}</p>
-    <div class="meta">
-      <span class="kind">{{ row.kind_label }}</span>
-      <span>{{ row.scope_label }}</span>
-      {% if row.pinned %}<span>Angeheftet</span>{% endif %}
-      <time datetime="{{ row.updated_at }}">{{ row.when }}</time>
-      {% if row.score is defined and q %}<span>{{ '%.2f'|format(row.score) }}</span>{% endif %}
-    </div>
-    <div class="actions">
-      <form method="post" action="/memories/{{ row.id }}/pin">
-        <input type="hidden" name="scope" value="{{ active }}">
-        <button type="submit">{{ "Lösen" if row.pinned else "Anheften" }}</button>
-      </form>
-      <a href="/memories/{{ row.id }}/forget">Vergessen</a>
-    </div>
-    <details>
-      <summary>Bearbeiten</summary>
-      <form method="post" action="/memories/{{ row.id }}">
-        <input type="hidden" name="scope" value="{{ active or row.scope }}">
-        <textarea name="text" rows="4">{{ row.text }}</textarea>
-        <button type="submit">Speichern</button>
-      </form>
-    </details>
-  </article>
-  {% endfor %}
+  {% for row in rows %}{{ card(row) }}{% endfor %}
 </section>
-<script src="/static/app.js"></script>
+{% elif active and active != 'global' and not q %}
+<p class="empty">In diesem Projekt liegt noch nichts.</p>
+{% endif %}
+
+{% if also %}
+<h2 class="section-title">Global <span>wird hier mitgelesen</span></h2>
+<section class="list" aria-label="Globale Erinnerungen">
+  {% for row in also %}{{ card(row) }}{% endfor %}
+</section>
+{% endif %}
+<script src="/static/app.js?v=2"></script>
 {% endblock %}

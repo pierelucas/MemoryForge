@@ -82,6 +82,7 @@ def create_app() -> FastAPI:
     def index(request: Request, q: str = "", scope: str = "", msg: str = "", err: str = ""):
         service = get_service()
         active = scope or ""
+        also: list = []
         if q.strip():
             rows = service.search(
                 q.strip(),
@@ -89,12 +90,15 @@ def create_app() -> FastAPI:
                 limit=40,
                 include_global=bool(active) and active != "global",
             )
+        elif active and active != "global":
+            rows = service.list_memories(active, limit=80)
+            also = service.list_memories("global", limit=40)
         else:
             rows = service.list_memories(active or None, limit=80)
         return templates.TemplateResponse(
             request,
             "index.html",
-            _page(request, rows=rows, q=q, active=scope, msg=msg, err=err),
+            _page(request, rows=rows, also=also, q=q, active=scope, msg=msg, err=err),
         )
 
     @app.post("/memories")
@@ -270,6 +274,8 @@ def _page(request: Request, **extra) -> dict:
     context.update(extra)
     if "rows" in context:
         context["rows"] = [_view(row) for row in context["rows"]]
+    if "also" in context:
+        context["also"] = [_view(row) for row in context["also"]]
     return context
 
 
