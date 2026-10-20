@@ -109,6 +109,31 @@ def test_moving_into_a_duplicate_is_rejected():
         assert get_service().store.get(global_row["id"])["scope"] == "global"
 
 
+def test_editing_into_a_duplicate_in_the_same_scope_is_rejected():
+    app = create_app()
+    with TestClient(app) as client:
+        client.post("/memories", data={"text": "Eins.", "scope": "global"})
+        client.post("/memories", data={"text": "Zwei.", "scope": "global"})
+        first = next(row for row in get_service().list_memories("global") if row["text"] == "Eins.")
+
+        rejected = client.post(
+            f"/memories/{first['id']}",
+            data={"text": "Zwei.", "scope": "global", "memory_scope": "global"},
+            follow_redirects=False,
+        )
+        assert rejected.status_code == 303
+        assert "err=" in rejected.headers["location"]
+        assert get_service().store.get(first["id"])["text"] == "Eins."
+
+
+def test_empty_project_page_has_one_hint_and_no_delete_link():
+    app = create_app()
+    with TestClient(app) as client:
+        page = client.get("/?scope=project:github.com/acme/empty")
+        assert page.text.count("Nothing in this project yet.") == 1
+        assert "/scopes/forget" not in page.text
+
+
 def test_forgetting_a_whole_scope():
     app = create_app()
     with TestClient(app) as client:

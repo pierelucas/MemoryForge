@@ -37,6 +37,14 @@ def test_backup_roundtrip_strips_secrets(tmp_path):
     assert found and "Umzugstest" in found[0]["text"]
 
 
+def test_backup_file_is_private(tmp_path):
+    service = MemoryService(load_config())
+    service.add("Privater Umzug.", scope="global")
+    dest = tmp_path / "private.zip"
+    create_backup(dest, include_secrets=True)
+    assert (dest.stat().st_mode & 0o777) == 0o600
+
+
 def test_restore_rejects_path_traversal(tmp_path):
     archive = tmp_path / "evil.zip"
     with zipfile.ZipFile(archive, "w") as handle:

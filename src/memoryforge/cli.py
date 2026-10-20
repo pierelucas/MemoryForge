@@ -255,6 +255,17 @@ def restore(archive: Path = typer.Argument(..., help="memoryforge-backup-....zip
     from memoryforge.backup import BackupError, restore_backup
 
     _stop(wait=True)
+    had_service = _stop_user_service()
+    # A foreground `serve`, systemd, or launchd keeps the old database open.
+    # Replacing the file under it can lose the restored rows through WAL.
+    host, port = _service_address()
+    if not _wait_stopped(host, port):
+        typer.echo(
+            f"Der Dienst läuft noch auf {_connect_host(host)}:{port}. "
+            "Vor dem Restore stoppen: memoryforge stop, dann erneut versuchen.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     reset()
     try:
         info = restore_backup(archive)
@@ -265,7 +276,11 @@ def restore(archive: Path = typer.Argument(..., help="memoryforge-backup-....zip
     typer.echo(f"Datenbank: {info['memories_db']}")
     if info.get("warning"):
         typer.echo(info["warning"])
-    typer.echo("Starte neu mit: memoryforge")
+    if had_service:
+        _start_user_service()
+        typer.echo("Dienst neu gestartet.")
+    else:
+        typer.echo("Starte neu mit: memoryforge")
 
 
 @config_app.command("show")
@@ -459,6 +474,51 @@ def _stop(wait: bool = False) -> bool:
         except OSError:
             pass
     return True
+
+
+def _systemd_unit() -> Path:
+    return Path.home() / ".config" / "systemd" / "user" / "memoryforge.service"
+
+
+def _launchd_plist() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / "com.memoryforge.plist"
+
+
+def _stop_user_service() -> bool:
+    """Stop a service started by install-service, not only a PID file."""
+    stopped = False
+    if _systemd_unit().exists():
+        subprocess.run(["systemctl", "--user", "stop", "memoryforge"], check=False)
+        stopped = True
+    plist = _launchd_plist()
+    if plist.exists():
+        subprocess.run(["launchctl", "unload", str(plist)], check=False)
+        stopped = True
+    return stopped
+
+
+def _start_user_service() -> None:
+    if _systemd_unit().exists():
+        subprocess.run(["systemctl", "--user", "start", "memoryforge"], check=False)
+    plist = _launchd_plist()
+    if plist.exists():
+        subprocess.run(["launchctl", "load", str(plist)], check=False)
+
+
+def _service_address() -> tuple[str, int]:
+    try:
+        cfg = load_config()
+    except ConfigError:
+        return "127.0.0.1", 4737
+    return cfg.server.host, cfg.server.port
+
+
+def _wait_stopped(host: str, port: int) -> bool:
+    for _ in range(10):
+        if not _healthy(host, port):
+            return True
+        time.sleep(0.2)
+    return False
 
 
 def _print_ready(host: str, port: int) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 import sqlite3
 import struct
@@ -106,6 +107,12 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        try:
+            # SQLite creates the file with the process umask. Memory may
+            # contain personal facts, so keep it private like the config.
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
         self._migrate_scopes()
 
     def close(self) -> None:
@@ -432,12 +439,18 @@ class Store:
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
             dest.unlink()
+        handle = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(handle)
         out = sqlite3.connect(dest)
         try:
             with self._lock:
                 self.conn.backup(out)
         finally:
             out.close()
+            try:
+                os.chmod(dest, 0o600)
+            except OSError:
+                pass
 
 
 def fts_query(text: str) -> str | None:

@@ -41,6 +41,9 @@ def create_backup(dest: Path, *, include_secrets: bool = True) -> Path:
         config_text = _config_text(include_secrets)
         if dest.exists():
             dest.unlink()
+        # Create the archive private from the first byte. It may hold the key.
+        handle = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(handle)
         with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, indent=2))
             archive.writestr("config.toml", config_text)

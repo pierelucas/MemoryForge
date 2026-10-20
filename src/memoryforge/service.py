@@ -208,19 +208,20 @@ class MemoryService:
         target = normalize_scope(scope) if scope else current["scope"]
         if not target:
             raise MemoryError("error.invalid_scope", "Ungültiger Scope.")
-        if target != current["scope"]:
-            if current["forgotten"]:
-                raise MemoryError(
-                    "error.forgotten_move",
-                    "Vergessene Erinnerungen lassen sich nicht verschieben.",
-                )
-            exact = self.store.find_exact(target, cleaned)
-            if exact and exact["id"] != memory_id:
-                raise MemoryError(
-                    "error.already_in_scope",
-                    f"Dieser Text steht schon in {target}.",
-                    scope=target,
-                )
+        if target != current["scope"] and current["forgotten"]:
+            raise MemoryError(
+                "error.forgotten_move",
+                "Vergessene Erinnerungen lassen sich nicht verschieben.",
+            )
+        # The same text must stay unique within a scope, whether the row is
+        # moved or only edited.
+        exact = self.store.find_exact(target, cleaned)
+        if exact and exact["id"] != memory_id:
+            raise MemoryError(
+                "error.already_in_scope",
+                f"Dieser Text steht schon in {target}.",
+                scope=target,
+            )
         embedding = self.embedder.embed_many([cleaned])[0]
         return self.store.update_text(memory_id, cleaned, embedding, scope=target)
 

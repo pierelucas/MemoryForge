@@ -116,6 +116,29 @@ def test_scope_strips_credentials_and_variants():
     assert normalize_scope("project:github.com/acme/demo/") == expected
     assert normalize_scope("project:https://github.com/acme/demo.git/") == expected
     assert normalize_scope("project:") == ""
+    # A scp-like remote inside project: used to keep the credentials.
+    assert normalize_scope("project:user:secret@github.com/acme/demo") == expected
+    assert normalize_scope("project:git@github.com:acme/demo.git") == expected
+    # Hosts are case-insensitive.
+    assert normalize_scope("project:GitHub.com/acme/demo") == expected
+
+
+def test_migration_removes_credentials_from_stored_scopes():
+    service = _service()
+    service.add("Alter Scope.", scope="project:github.com/acme/old")
+    service.store.conn.execute(
+        "UPDATE memories SET scope = ? WHERE scope = ?",
+        ("project:user:secret@github.com/acme/old", "project:github.com/acme/old"),
+    )
+    service.store.conn.commit()
+    service.store._migrate_scopes()
+    assert [row["scope"] for row in service.store.scopes()] == ["project:github.com/acme/old"]
+
+
+def test_database_file_is_private():
+    service = _service()
+    service.add("Privater Fakt.", scope="global")
+    assert (service.store.path.stat().st_mode & 0o777) == 0o600
 
 
 def test_duplicate_check_folds_unicode_case():

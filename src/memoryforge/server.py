@@ -373,7 +373,11 @@ def create_app() -> FastAPI:
         handle, name = tempfile.mkstemp(prefix="memoryforge-backup-", suffix=".zip")
         os.close(handle)
         dest = Path(name)
-        create_backup(dest, include_secrets=secrets == "1")
+        try:
+            create_backup(dest, include_secrets=secrets == "1")
+        except Exception:
+            dest.unlink(missing_ok=True)
+            raise
         # The archive may contain the API key. Remove it once it is sent.
         return FileResponse(
             dest,

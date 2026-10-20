@@ -105,7 +105,7 @@ Search does not call the API.
 | GPT-4.1 mini | `gpt-4.1-mini` | same |
 | GPT-4o mini | `gpt-4o-mini` | same |
 
-The label is just a label. The provider has to accept the id. Another id, or a local OpenAI-compatible server, goes in **Eigene Modell-ID**. A filled custom id wins over the list. Choosing a listed model clears the custom field.
+The label is just a label. The provider has to accept the id. Another id, or a local OpenAI-compatible server, goes in **Custom model ID**. A filled custom id wins over the list. Choosing a listed model clears the custom field.
 
 ```bash
 memoryforge config models

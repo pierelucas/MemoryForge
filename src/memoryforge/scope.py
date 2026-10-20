@@ -26,7 +26,10 @@ def normalize_remote(url: str) -> str:
     if not text:
         return ""
     if "://" not in text:
-        scp = re.match(r"^(?:[^@/\s]+@)?([^:/\s]+):(.+)$", text)
+        # git@host:path and user:secret@host/path both carry credentials.
+        if "@" in text:
+            text = text.rsplit("@", 1)[1]
+        scp = re.match(r"^([^:/\s]+):(.+)$", text)
         if scp:
             return _join(scp.group(1), scp.group(2))
         return _clean_path(text)
@@ -37,6 +40,12 @@ def normalize_remote(url: str) -> str:
     if parsed.scheme.lower() in _REMOTE_SCHEMES:
         return _join(parsed.hostname or "", parsed.path)
     return _clean_path(text)
+
+
+def _lower_host(path: str) -> str:
+    """Hosts are case-insensitive. GitHub.com and github.com are one scope."""
+    head, sep, tail = path.partition("/")
+    return head.lower() + sep + tail
 
 
 def _looks_remote(text: str) -> bool:
@@ -56,9 +65,9 @@ def normalize_scope(scope: str | None) -> str:
         return "global"
     if text.lower().startswith("project:"):
         rest = text.split(":", 1)[1].strip()
-        if _looks_remote(rest):
+        if _looks_remote(rest) or "@" in rest:
             rest = normalize_remote(rest)
-        cleaned = _clean_path(rest)
+        cleaned = _lower_host(_clean_path(rest))
         return "project:" + cleaned if cleaned else ""
     if _looks_remote(text):
         return "project:" + normalize_remote(text)
