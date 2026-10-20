@@ -92,18 +92,26 @@ class ChatLLM:
         if not self.cfg.llm.thinking:
             body["thinking"] = {"type": "disabled"}
         response = self._post(url, key, body)
-        if response.status_code >= 400 and ("thinking" in body or "response_format" in body):
+        if response.status_code in {400, 422} and ("thinking" in body or "response_format" in body):
+            # Providers differ in which optional fields they accept. Retry
+            # once without them, but never for auth or rate-limit errors.
             body.pop("thinking", None)
             body.pop("response_format", None)
             response = self._post(url, key, body)
         if response.status_code >= 400:
             detail = response.text[:300].replace(key, "[redacted]")
             raise LLMError(f"API {response.status_code}: {detail}")
-        data = response.json()
         try:
-            return data["choices"][0]["message"]["content"] or ""
+            data = response.json()
+        except ValueError as exc:
+            raise LLMError("Die API hat kein JSON geliefert.") from exc
+        try:
+            content = data["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError("Die API hat keine Textantwort geliefert.") from exc
+        if not content.strip():
+            raise LLMError("Die API hat eine leere Antwort geliefert.")
+        return content
 
     def _post(self, url: str, key: str, body: dict) -> httpx.Response:
         try:
@@ -118,7 +126,10 @@ class ChatLLM:
 
 
 def parse_actions(raw: str) -> list[dict]:
-    data = json.loads(_strip_fence(raw))
+    try:
+        data = json.loads(_strip_fence(raw))
+    except json.JSONDecodeError as exc:
+        raise LLMError("Die API hat kein gültiges JSON geliefert.") from exc
     actions = data.get("actions") if isinstance(data, dict) else data
     if not isinstance(actions, list):
         raise LLMError("Die API hat keine actions-Liste geliefert.")
@@ -147,6 +158,8 @@ def parse_actions(raw: str) -> list[dict]:
                 "replaces": replaces,
             }
         )
+    if actions and not cleaned:
+        raise LLMError("Die API hat nur ungültige Aktionen geliefert.")
     return cleaned
 
 

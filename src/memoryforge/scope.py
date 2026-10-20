@@ -3,20 +3,47 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
+
+_REMOTE_SCHEMES = {"http", "https", "ssh", "git", "git+ssh"}
+
+
+def _clean_path(path: str) -> str:
+    cleaned = re.sub(r"/+", "/", path.strip()).strip("/")
+    if cleaned.lower().endswith(".git"):
+        cleaned = cleaned[: -len(".git")].rstrip("/")
+    return cleaned
+
+
+def _join(host: str, path: str) -> str:
+    host = host.strip().lower()
+    cleaned = _clean_path(path)
+    return f"{host}/{cleaned}" if cleaned else host
 
 
 def normalize_remote(url: str) -> str:
     text = url.strip()
-    text = re.sub(r"\.git$", "", text)
-    if text.startswith("git@"):
-        host_path = text.split("@", 1)[1]
-        if ":" in host_path:
-            host, path = host_path.split(":", 1)
-            return f"{host}/{path}"
-    match = re.match(r"https?://([^/]+)/(.+)", text)
-    if match:
-        return f"{match.group(1)}/{match.group(2)}"
-    return text
+    if not text:
+        return ""
+    if "://" not in text:
+        scp = re.match(r"^(?:[^@/\s]+@)?([^:/\s]+):(.+)$", text)
+        if scp:
+            return _join(scp.group(1), scp.group(2))
+        return _clean_path(text)
+    try:
+        parsed = urlsplit(text)
+    except ValueError:
+        return _clean_path(text)
+    if parsed.scheme.lower() in _REMOTE_SCHEMES:
+        return _join(parsed.hostname or "", parsed.path)
+    return _clean_path(text)
+
+
+def _looks_remote(text: str) -> bool:
+    lowered = text.lower()
+    if lowered.startswith(("git@", "http://", "https://", "ssh://", "git://", "git+ssh://")):
+        return True
+    return False
 
 
 def normalize_scope(scope: str | None) -> str:
@@ -27,12 +54,13 @@ def normalize_scope(scope: str | None) -> str:
         return ""
     if text.lower() == "global":
         return "global"
-    if text.startswith("project:"):
+    if text.lower().startswith("project:"):
         rest = text.split(":", 1)[1].strip()
-        if rest.startswith("git@") or rest.startswith("http://") or rest.startswith("https://"):
+        if _looks_remote(rest):
             rest = normalize_remote(rest)
-        return "project:" + rest.removesuffix(".git")
-    if text.startswith("git@") or text.startswith("http://") or text.startswith("https://"):
+        cleaned = _clean_path(rest)
+        return "project:" + cleaned if cleaned else ""
+    if _looks_remote(text):
         return "project:" + normalize_remote(text)
     return text
 
@@ -62,4 +90,15 @@ def scope_label(scope: str) -> str:
         rest = scope.split(":", 1)[1]
         name = rest.rstrip("/").split("/")[-1] or rest
         return name
+    return scope
+
+
+def scope_path_label(scope: str) -> str:
+    """Full path without the host, so equal repository names stay distinct."""
+    if scope == "global":
+        return "Global"
+    if scope.startswith("project:"):
+        rest = scope.split(":", 1)[1].strip("/")
+        parts = rest.split("/", 1)
+        return parts[1] if len(parts) == 2 and parts[1] else rest
     return scope

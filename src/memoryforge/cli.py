@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import shlex
 import signal
 import subprocess
 import sys
 import time
 import webbrowser
+import xml.sax.saxutils
 from datetime import datetime
 from pathlib import Path
 
@@ -13,7 +15,7 @@ import httpx
 import typer
 
 from memoryforge import __version__
-from memoryforge.config import load_config, model_catalog, set_value
+from memoryforge.config import ConfigError, load_config, model_catalog, set_value
 from memoryforge.paths import ensure_dirs, log_path, pid_path
 from memoryforge.service import get_service, reset
 
@@ -25,13 +27,23 @@ app.add_typer(config_app, name="config")
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context) -> None:
     """Ohne Befehl: lokalen Dienst sicherstellen und die Adresse anzeigen."""
-    if ctx.invoked_subcommand is None:
+    # restore must stay available even when the current config is broken;
+    # its whole purpose is to replace that file.
+    if ctx.invoked_subcommand == "restore":
+        return
+    try:
         cfg = load_config()
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if ctx.invoked_subcommand is None:
         if not _healthy(cfg.server.host, cfg.server.port):
             _spawn(cfg.server.host, cfg.server.port)
             if not _wait_healthy(cfg.server.host, cfg.server.port):
                 raise typer.Exit(code=1)
         _print_ready(cfg.server.host, cfg.server.port)
+        if cfg.server.open_browser:
+            webbrowser.open(f"http://{_connect_host(cfg.server.host)}:{cfg.server.port}/")
 
 
 @app.command()
@@ -78,7 +90,7 @@ def serve(
 @app.command()
 def stop() -> None:
     """Stoppt den Hintergrunddienst."""
-    if _stop():
+    if _stop(wait=True):
         typer.echo("Gestoppt.")
     else:
         typer.echo("Es läuft kein MemoryForge-Dienst.")
@@ -92,8 +104,7 @@ def ui() -> None:
         _spawn(cfg.server.host, cfg.server.port)
         if not _wait_healthy(cfg.server.host, cfg.server.port):
             raise typer.Exit(code=1)
-    host = "127.0.0.1" if cfg.server.host in {"0.0.0.0", "::"} else cfg.server.host
-    webbrowser.open(f"http://{host}:{cfg.server.port}/")
+    webbrowser.open(f"http://{_connect_host(cfg.server.host)}:{cfg.server.port}/")
 
 
 @app.command()
@@ -134,12 +145,12 @@ def search(
 ) -> None:
     """Sucht per Bedeutung und Volltext. Ohne --scope im Repo: Projekt plus global."""
     resolved = scope
-    detect = scope is None
-    if detect:
+    if scope is None:
         from memoryforge.scope import detect_scope
 
-        found = detect_scope()
-        resolved = None if found == "global" else found
+        # Outside a repository this is a global search. Passing None used to
+        # search every project as well, which contradicted the scope table.
+        resolved = detect_scope()
     rows = get_service().search(query, scope=resolved, limit=limit)
     if not rows:
         typer.echo("Nichts gefunden.")
@@ -211,7 +222,7 @@ def doctor() -> None:
     """Zeigt Pfade, Zähler und ob die KI an ist."""
     cfg = load_config()
     service = get_service()
-    host = "127.0.0.1" if cfg.server.host in {"0.0.0.0", "::"} else cfg.server.host
+    host = _connect_host(cfg.server.host)
     typer.echo(f"Version      {__version__}")
     typer.echo(f"Konfiguration {cfg.path}")
     typer.echo(f"Datenbank    {service.store.path}")
@@ -243,11 +254,11 @@ def restore(archive: Path = typer.Argument(..., help="memoryforge-backup-....zip
     """Ersetzt lokale Konfiguration und Datenbank durch ein Backup."""
     from memoryforge.backup import BackupError, restore_backup
 
-    _stop()
+    _stop(wait=True)
     reset()
     try:
         info = restore_backup(archive)
-    except BackupError as exc:
+    except (BackupError, ConfigError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Wiederhergestellt: {info['config']}")
@@ -293,7 +304,7 @@ def config_models() -> None:
 @app.command("install-service")
 def install_service() -> None:
     """Richtet einen Benutzerdienst ein (systemd oder launchd)."""
-    exe = _executable()
+    command = _executable_args()
     if sys.platform.startswith("linux"):
         unit_dir = Path.home() / ".config" / "systemd" / "user"
         unit_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +317,7 @@ def install_service() -> None:
                     "After=default.target",
                     "",
                     "[Service]",
-                    f"ExecStart={exe} serve",
+                    "ExecStart=" + " ".join(shlex.quote(part) for part in [*command, "serve"]),
                     "Restart=on-failure",
                     "",
                     "[Install]",
@@ -324,13 +335,16 @@ def install_service() -> None:
         plist_dir = Path.home() / "Library" / "LaunchAgents"
         plist_dir.mkdir(parents=True, exist_ok=True)
         plist = plist_dir / "com.memoryforge.plist"
+        arguments = "".join(
+            f"<string>{xml.sax.saxutils.escape(part)}</string>" for part in [*command, "serve"]
+        )
         plist.write_text(
             f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>com.memoryforge</string>
   <key>ProgramArguments</key>
-  <array><string>{exe}</string><string>serve</string></array>
+  <array>{arguments}</array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict></plist>
@@ -344,9 +358,13 @@ def install_service() -> None:
     typer.echo("Automatischer Start ist hier nicht eingerichtet. Starte mit: memoryforge serve")
 
 
-def _executable() -> str:
+def _executable_args() -> list[str]:
     found = shutil_which("memoryforge")
-    return found or f"{sys.executable} -m memoryforge"
+    if found:
+        return [found]
+    # systemd and launchd run each array element as one argv entry. A single
+    # "python -m memoryforge" string was looked up as a program name.
+    return [sys.executable, "-m", "memoryforge"]
 
 
 def shutil_which(name: str) -> str | None:
@@ -358,20 +376,24 @@ def shutil_which(name: str) -> str | None:
 def _connect_host(host: str) -> str:
     if host in {"0.0.0.0", "::"}:
         return "127.0.0.1"
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
     return host
 
 
 def _healthy(host: str, port: int) -> bool:
     try:
-        response = httpx.get(f"http://{_connect_host(host)}:{port}/api/health", timeout=0.5)
+        response = httpx.get(f"http://{_connect_host(host)}:{port}/api/health", timeout=1.0)
     except httpx.HTTPError:
         return False
     if response.status_code != 200:
         return False
     try:
-        return response.json().get("status") == "ok"
+        data = response.json()
     except ValueError:
         return False
+    # A different local service may also answer {"status": "ok"}.
+    return data.get("status") == "ok" and "version" in data
 
 
 def _wait_healthy(host: str, port: int) -> bool:
@@ -385,22 +407,31 @@ def _wait_healthy(host: str, port: int) -> bool:
 
 def _spawn(host: str, port: int) -> None:
     ensure_dirs()
-    log = open(log_path(), "ab")
     cmd = [sys.executable, "-m", "memoryforge", "serve", "--host", host, "--port", str(port)]
     kwargs: dict = {
-        "stdout": log,
-        "stderr": log,
         "stdin": subprocess.DEVNULL,
     }
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
     else:
         kwargs["start_new_session"] = True
-    proc = subprocess.Popen(cmd, **kwargs)
+    with open(log_path(), "ab") as log:
+        proc = subprocess.Popen(cmd, stdout=log, stderr=log, **kwargs)
     pid_path().write_text(str(proc.pid), encoding="utf-8")
 
 
-def _stop() -> bool:
+def _is_memoryforge(pid: int) -> bool:
+    """A stale pid file must never kill an unrelated process."""
+    if not sys.platform.startswith("linux"):
+        return True
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return False
+    return b"memoryforge" in cmdline
+
+
+def _stop(wait: bool = False) -> bool:
     path = pid_path()
     if not path.exists():
         return False
@@ -409,10 +440,24 @@ def _stop() -> bool:
     if not raw.isdigit():
         return False
     pid = int(raw)
+    if not _is_memoryforge(pid):
+        return False
     try:
         os.kill(pid, signal.SIGTERM)
     except OSError:
         return False
+    if wait:
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return True
+            time.sleep(0.1)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
     return True
 
 

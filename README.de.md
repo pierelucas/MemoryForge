@@ -199,7 +199,7 @@ Cursor, Claude Code und andere Clients auf diesem Rechner nehmen dasselbe stdio-
 http://127.0.0.1:4737/mcp
 ```
 
-Auf dem Port gibt es keine Anmeldung. Nicht ins gemeinsame Netz binden.
+Auf dem Port gibt es keine Anmeldung. Nicht ins gemeinsame Netz binden. Auf der Standardbindung weist das Notizbuch Anfragen mit fremdem `Host` ab und blockt Formular-Posts von anderen Origins. `curl` und MCP-Clients ohne Origin bleiben erlaubt.
 
 ## Konfiguration
 

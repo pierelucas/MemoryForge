@@ -28,6 +28,30 @@ if (provider && baseUrl) {
 }
 
 if (modelChoice && modelCustom) {
+  const allOptions = Array.from(modelChoice.options).map((option) => option.cloneNode(true));
+
+  // The catalog lists DeepSeek and OpenAI models side by side. Switching the
+  // provider used to leave the old model selected, so the saved pair did not
+  // match. Rebuild the list and keep the custom entry.
+  const filterModels = () => {
+    const key = provider ? provider.value : "";
+    const current = modelChoice.value;
+    const keep = Array.from(modelChoice.options).some(
+      (option) => option.value === current && option.dataset.provider === key
+    )
+      ? current
+      : "";
+    modelChoice.innerHTML = "";
+    allOptions.forEach((option) => {
+      if (!option.dataset.provider || option.dataset.provider === key) {
+        modelChoice.appendChild(option.cloneNode(true));
+      }
+    });
+    if (keep) modelChoice.value = keep;
+  };
+
+  if (provider) provider.addEventListener("change", filterModels);
+
   modelChoice.addEventListener("change", () => {
     const option = modelChoice.selectedOptions[0];
     if (!option || option.value === "__custom__") {

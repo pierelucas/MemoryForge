@@ -199,7 +199,7 @@ Cursor, Claude Code, and other clients on this machine can use the same stdio co
 http://127.0.0.1:4737/mcp
 ```
 
-There is no authentication on that port. Do not bind it to a shared network.
+There is no authentication on that port. Do not bind it to a shared network. On the default loopback bind the notebook rejects requests with a foreign `Host` header and form posts from another origin. `curl` and MCP clients that send no origin still work.
 
 ## Config
 

@@ -4,6 +4,7 @@ import hashlib
 import math
 import os
 import re
+import sys
 import threading
 
 
@@ -31,36 +32,46 @@ class FastEmbedder(Embedder):
         self.model = model
         self.name = f"fastembed:{model}"
         self._model = None
+        self._fallback: HashEmbedder | None = None
         self._lock = threading.Lock()
 
     def embed_many(self, texts: list[str]) -> list[list[float]]:
         with self._lock:
+            if self._fallback is not None:
+                return self._fallback.embed_many(texts)
             if self._model is None:
-                from fastembed import TextEmbedding
+                try:
+                    from fastembed import TextEmbedding
 
-                self._model = TextEmbedding(model_name=self.model)
-            vectors = list(self._model.embed(texts))
+                    self._model = TextEmbedding(model_name=self.model)
+                except Exception as exc:  # noqa: BLE001 — missing package or model download
+                    self._warn(exc)
+                    self._fallback = HashEmbedder()
+                    self.name = "hash"
+                    return self._fallback.embed_many(texts)
+            try:
+                vectors = list(self._model.embed(texts))
+            except Exception as exc:  # noqa: BLE001 — a broken model must not kill search
+                self._warn(exc)
+                self._fallback = HashEmbedder()
+                self.name = "hash"
+                return self._fallback.embed_many(texts)
         return [[float(x) for x in vector] for vector in vectors]
 
-
-_warned = False
+    def _warn(self, exc: Exception) -> None:
+        print(
+            "MemoryForge: fastembed ist nicht verfügbar, suche mit dem Hash-Fallback. "
+            f"Grund: {exc.__class__.__name__}. Für semantische Suche fastembed installieren "
+            "und danach `memoryforge reembed` ausführen.",
+            file=sys.stderr,
+        )
 
 
 def get_embedder(model: str) -> Embedder:
-    global _warned
     mode = os.environ.get("MEMORYFORGE_EMBED", "fastembed").strip().lower()
     if mode == "hash":
         return HashEmbedder()
-    try:
-        return FastEmbedder(model)
-    except Exception:
-        if not _warned:
-            _warned = True
-            print(
-                "MemoryForge: fastembed ist nicht verfügbar, suche mit dem Hash-Fallback. "
-                "Für semantische Suche fastembed installieren (ist in den Abhängigkeiten enthalten)."
-            )
-        return HashEmbedder()
+    return FastEmbedder(model)
 
 
 def _hash_embed(text: str) -> list[float]:

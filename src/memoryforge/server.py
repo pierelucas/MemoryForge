@@ -3,18 +3,19 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.background import BackgroundTask
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from memoryforge import __version__
 from memoryforge.config import KIND_LABELS, PROVIDERS, known_model, load_config, model_catalog
-from memoryforge.scope import scope_label
+from memoryforge.scope import normalize_scope, scope_label, scope_path_label
 from memoryforge.service import get_service, seed_demo
 
 PACKAGE = Path(__file__).resolve().parent
@@ -33,6 +34,94 @@ class _McpSlash:
             scope["path"] = "/mcp/"
             scope["raw_path"] = b"/mcp/"
         await self.app(scope, receive, send)
+
+
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+class _BrowserGuard:
+    """Reject cross-site writes and DNS-rebinding requests against the notebook.
+
+    curl, the MCP client, and other tools send no Origin header and keep
+    working. A browser always sends one for a cross-site form POST, which is
+    the case this blocks.
+    """
+
+    def __init__(self, app: ASGIApp, bind_host: str) -> None:
+        self.app = app
+        self.local_only = bind_host in {"127.0.0.1", "localhost", "::1"}
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("path", "").startswith("/mcp"):
+            await self.app(scope, receive, send)
+            return
+        headers = {
+            key.decode("latin-1").lower(): value.decode("latin-1")
+            for key, value in scope.get("headers", [])
+        }
+        origin = headers.get("origin") or headers.get("referer")
+        host = headers.get("host", "")
+        # Always check the Host header on a loopback bind. A DNS-rebinding
+        # request arrives with the attacker's hostname even without Origin.
+        if self.local_only and not _host_allowed(host):
+            await _plain(send, 421, "Invalid Host header")
+            return
+        if origin and not _origin_matches(origin, host, scope.get("scheme", "http")):
+            await _plain(send, 403, "Cross-site request rejected")
+            return
+        await self.app(scope, receive, send)
+
+
+def _host_name(host: str) -> str:
+    try:
+        return (urlsplit("//" + host).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _host_port(host: str, default: int) -> int:
+    try:
+        return urlsplit("//" + host).port or default
+    except ValueError:
+        return default
+
+
+def _host_allowed(host: str) -> bool:
+    return _host_name(host) in _LOCAL_HOSTS
+
+
+def _origin_matches(origin: str, host: str, scheme: str = "http") -> bool:
+    if origin == "null":
+        return False
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    default = 443 if parsed.scheme == "https" else 80
+    try:
+        origin_port = parsed.port or default
+    except ValueError:
+        return False
+    host_default = 443 if scheme == "https" else 80
+    return (parsed.hostname or "").lower() == _host_name(host) and origin_port == _host_port(host, host_default)
+
+
+async def _plain(send: Send, status: int, body: str) -> None:
+    payload = body.encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"text/plain; charset=utf-8"),
+                (b"content-length", str(len(payload)).encode("ascii")),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": payload})
 
 
 def create_app() -> FastAPI:
@@ -64,6 +153,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="MemoryForge", version=__version__, lifespan=lifespan)
     app.add_middleware(_McpSlash)
+    app.add_middleware(_BrowserGuard, bind_host=bind)
     app.mount("/static", StaticFiles(directory=str(PACKAGE / "static")), name="static")
     app.mount("/mcp", mcp_http)
 
@@ -81,7 +171,10 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, q: str = "", scope: str = "", msg: str = "", err: str = ""):
         service = get_service()
-        active = scope or ""
+        # Normalize here as well: a git URL or trailing slash in the address
+        # bar used to select nothing in the sidebar and fall back to global
+        # in the composer.
+        active = normalize_scope(scope)
         also: list = []
         if q.strip():
             rows = service.search(
@@ -98,20 +191,22 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request,
             "index.html",
-            _page(request, rows=rows, also=also, q=q, active=scope, msg=msg, err=err),
+            _page(request, rows=rows, also=also, q=q, active=active, msg=msg, err=err),
         )
 
     @app.post("/memories")
     def create_memory(text: str = Form(...), scope: str = Form(""), scope_custom: str = Form("")):
         service = get_service()
-        chosen = (scope_custom or scope or "global").strip() or "global"
+        chosen = normalize_scope(scope_custom or scope or "global") or "global"
         try:
             result = service.add(text, scope=chosen, source="ui", detect=False)
         except ValueError as exc:
             return _redirect("/", err=str(exc))
-        if not result["memories"] and result["noop"]:
-            return _redirect(_home(chosen, "War schon gespeichert."))
-        return _redirect(_home(chosen, "Gespeichert."))
+        stored_scope = result["memories"][0]["scope"] if result["memories"] else chosen
+        if result["noop"]:
+            message = "War schon gespeichert." if result["memories"] else "Nichts Neues gespeichert."
+            return _redirect(_home(stored_scope, message))
+        return _redirect(_home(stored_scope, "Gespeichert."))
 
     @app.post("/memories/{memory_id}")
     def edit_memory(memory_id: str, text: str = Form(...), scope: str = Form("")):
@@ -120,8 +215,8 @@ def create_app() -> FastAPI:
         except KeyError:
             raise HTTPException(status_code=404) from None
         except ValueError as exc:
-            return _redirect(_home(scope, ""), err=str(exc))
-        return _redirect(_home(scope or row["scope"], "Aktualisiert."))
+            return _redirect(_home(normalize_scope(scope), ""), err=str(exc))
+        return _redirect(_home(normalize_scope(scope) or row["scope"], "Aktualisiert."))
 
     @app.get("/memories/{memory_id}/forget", response_class=HTMLResponse)
     def forget_confirm(request: Request, memory_id: str):
@@ -136,13 +231,12 @@ def create_app() -> FastAPI:
 
     @app.post("/memories/{memory_id}/forget")
     def forget_memory(memory_id: str):
-        try:
-            row = get_service().store.get(memory_id)
-            get_service().forget(memory_id)
-        except KeyError:
-            raise HTTPException(status_code=404) from None
-        scope = row["scope"] if row else ""
-        return _redirect(_home(scope, "Vergessen."))
+        service = get_service()
+        row = service.store.get(memory_id)
+        if row is None or row["forgotten"]:
+            raise HTTPException(status_code=404)
+        service.forget(memory_id)
+        return _redirect(_home(row["scope"], "Vergessen."))
 
     @app.post("/memories/{memory_id}/pin")
     def pin_memory(memory_id: str, scope: str = Form("")):
@@ -221,16 +315,26 @@ def create_app() -> FastAPI:
         result = get_service().dream(scope or None)
         target = "/settings" if not scope else _home(scope)
         key = "msg" if result.get("ok") else "err"
-        return _redirect(f"{target}?{key}=" + quote(result.get("message") or "Fertig."))
+        join = "&" if "?" in target else "?"
+        return _redirect(f"{target}{join}{key}=" + quote(result.get("message") or "Fertig."))
 
     @app.post("/backup")
     def backup_now(secrets: str = Form("1")):
-        from memoryforge.backup import create_backup
-        from memoryforge.paths import data_dir
+        import tempfile
 
-        dest = data_dir() / "memoryforge-backup.zip"
+        from memoryforge.backup import create_backup
+
+        handle, name = tempfile.mkstemp(prefix="memoryforge-backup-", suffix=".zip")
+        os.close(handle)
+        dest = Path(name)
         create_backup(dest, include_secrets=secrets == "1")
-        return FileResponse(dest, filename="memoryforge-backup.zip", media_type="application/zip")
+        # The archive may contain the API key. Remove it once it is sent.
+        return FileResponse(
+            dest,
+            filename="memoryforge-backup.zip",
+            media_type="application/zip",
+            background=BackgroundTask(dest.unlink, missing_ok=True),
+        )
 
     @app.get("/api/memories")
     def api_list(q: str = "", scope: str = "", limit: int = 20):
@@ -265,6 +369,7 @@ def _page(request: Request, **extra) -> dict:
                 "scope": row["scope"],
                 "count": row["count"],
                 "label": scope_label(row["scope"]),
+                "path_label": scope_path_label(row["scope"]),
             }
             for row in scopes
         ],

@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 
 from memoryforge.config import KINDS, Config, load_config
-from memoryforge.db import Store, cosine, fts_query
+from memoryforge.db import Store, clamp_limit, cosine, fts_query
 from memoryforge.embed import Embedder, get_embedder
 from memoryforge.llm import ChatLLM, LLMError
 from memoryforge.paths import db_path
@@ -58,6 +58,21 @@ class MemoryService:
         except LLMError:
             memory = self._insert(cleaned, resolved, "fact", source, confidence=0.5)
             return {"memories": [memory], "noop": False, "llm": False, "warning": "Extraktion fehlgeschlagen, Text wörtlich gespeichert."}
+        if not actions or all(action.get("op") == "noop" for action in actions):
+            # The model explicitly said there is nothing new. Do not store a
+            # fallback copy; only report what the note already referred to.
+            references: list[str] = []
+            for action in actions:
+                values = action.get("replaces") or []
+                if isinstance(values, str):
+                    values = [values]
+                references.extend(value for value in values if isinstance(value, str))
+            existing = [
+                row
+                for row in self.store.get_many(references)
+                if row["scope"] == resolved and not row["forgotten"] and not row["superseded_by"]
+            ]
+            return {"memories": existing, "noop": True, "llm": True}
         memories = self.apply_actions(actions, scope=resolved, source=source, fallback=cleaned)
         return {"memories": memories, "noop": not memories, "llm": True}
 
@@ -73,8 +88,19 @@ class MemoryService:
                 continue
             kind = action.get("kind") if action.get("kind") in KINDS else "fact"
             if op == "supersede":
+                replaces = action.get("replaces") or []
+                if isinstance(replaces, str):
+                    replaces = [replaces]
+                existing = self.store.find_exact(scope, text)
+                if existing:
+                    # The merged text already exists; retire the old rows and
+                    # reuse that row instead of adding a duplicate.
+                    self.store.supersede(replaces, existing["id"], scope=scope)
+                    stored.append(existing)
+                    changed = True
+                    continue
                 memory = self._insert(text, scope, kind, source, confidence=0.8)
-                self.store.supersede(action.get("replaces") or [], memory["id"])
+                self.store.supersede(replaces, memory["id"], scope=scope)
                 stored.append(memory)
                 changed = True
             elif op == "add":
@@ -99,6 +125,7 @@ class MemoryService:
         )
 
     def search(self, query: str, *, scope: str | None = None, limit: int = 8, include_global: bool | None = None) -> list[dict]:
+        limit = clamp_limit(limit, 200)
         resolved = normalize_scope(scope) if scope else ""
         if include_global is None:
             include_global = bool(resolved) and resolved != "global"
@@ -118,21 +145,22 @@ class MemoryService:
         for memory_id in ids:
             score = 0.72 * vector_scores.get(memory_id, 0.0) + 0.28 * fts_scores.get(memory_id, 0.0)
             ranked.append((score, memory_id))
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        chosen = [memory_id for score, memory_id in ranked if score > 0][:limit]
-        by_id = {item["id"]: item for item in self.store.get_many(chosen)}
+        ranked = [(score, memory_id) for score, memory_id in ranked if score > 0]
+        by_id = {item["id"]: item for item in self.store.get_many([memory_id for _, memory_id in ranked])}
         results = []
         for score, memory_id in ranked:
-            if memory_id not in by_id or score <= 0:
+            row = by_id.get(memory_id)
+            if row is None:
                 continue
-            if len(results) >= limit:
-                break
-            row = dict(by_id[memory_id])
+            # Boost before sorting. Adding it afterwards only changed the
+            # displayed number, never the order.
             if row["pinned"]:
                 score += 0.04
-            row["score"] = round(score, 4)
-            results.append(row)
-        return results
+            shown = dict(row)
+            shown["score"] = round(score, 4)
+            results.append(shown)
+        results.sort(key=lambda item: item["score"], reverse=True)
+        return results[:limit]
 
     def brief(self, scope: str | None = None, *, detect: bool = False) -> dict:
         resolved = normalize_scope(scope) if scope else ""
@@ -147,7 +175,7 @@ class MemoryService:
 
     def list_memories(self, scope: str | None = None, limit: int = 50) -> list[dict]:
         resolved = normalize_scope(scope) if scope else ""
-        return self.store.list_memories(scope=resolved or None, include_global=False, limit=limit)
+        return self.store.list_memories(scope=resolved or None, include_global=False, limit=clamp_limit(limit))
 
     def forget(self, memory_id: str) -> None:
         self.store.forget(memory_id)
@@ -166,7 +194,9 @@ class MemoryService:
         if not self.cfg.llm.enabled:
             return {"ok": False, "changed": 0, "reviewed": 0, "message": "KI ist aus. Dreaming hat nichts geändert."}
         resolved = normalize_scope(scope) if scope else ""
-        rows = self.store.list_memories(scope=resolved or None, include_global=False, limit=80)
+        # Dream over every active row. The old 80-row page silently skipped
+        # older memories once a scope grew.
+        rows = self.store.all_active(resolved or None)
         if len(rows) < 2:
             return {"ok": True, "changed": 0, "reviewed": len(rows), "message": "Zu wenige Erinnerungen zum Träumen."}
         groups: dict[str, list[dict]] = {}

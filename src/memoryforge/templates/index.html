@@ -72,13 +72,20 @@
   <div class="composer-row">
     <label class="inline">
       Scope
+      {% set selected = namespace(found=false) %}
+      {% for item in scopes %}
+        {% if item.scope == active %}{% set selected.found = true %}{% endif %}
+      {% endfor %}
       <select name="scope">
         <option value="global" {% if active == 'global' or not active %}selected{% endif %}>Global</option>
         {% for item in scopes %}
           {% if item.scope != 'global' %}
-          <option value="{{ item.scope }}" {% if active == item.scope %}selected{% endif %}>{{ item.label }}</option>
+          <option value="{{ item.scope }}" title="{{ item.scope }}" {% if active == item.scope %}selected{% endif %}>{{ item.path_label }}</option>
           {% endif %}
         {% endfor %}
+        {% if active and active != 'global' and not selected.found %}
+        <option value="{{ active }}" selected>{{ active }}</option>
+        {% endif %}
       </select>
     </label>
     <button type="submit">Merken</button>

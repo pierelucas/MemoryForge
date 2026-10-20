@@ -142,18 +142,35 @@ def coerce_bool(value, default: bool = False) -> bool:
     return default
 
 
+class ConfigError(ValueError):
+    """The config file exists but cannot be used."""
+
+
 def load_config() -> Config:
     path = config_path()
     cfg = Config(path=path)
     if not path.exists():
         return cfg
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError) as exc:
+        raise ConfigError(f"Konfiguration {path} ist nicht lesbar: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f"Konfiguration {path} enthält keine Tabelle.")
     server = data.get("server") or {}
     llm = data.get("llm") or {}
     embed = data.get("embed") or {}
+    if not all(isinstance(section, dict) for section in (server, llm, embed)):
+        raise ConfigError(f"Konfiguration {path} enthält einen ungültigen Abschnitt.")
     cfg.server.autostart = coerce_bool(server.get("autostart"), False)
     cfg.server.host = str(server.get("host") or "127.0.0.1")
-    cfg.server.port = int(server.get("port") or 4737)
+    try:
+        port = int(server.get("port") or 4737)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"server.port in {path} ist keine Zahl.") from exc
+    if not 1 <= port <= 65535:
+        raise ConfigError(f"server.port in {path} liegt außerhalb von 1 bis 65535.")
+    cfg.server.port = port
     cfg.server.open_browser = coerce_bool(server.get("open_browser"), False)
     cfg.llm.enabled = coerce_bool(llm.get("enabled"), False)
     cfg.llm.provider = str(llm.get("provider") or "deepseek")
@@ -177,7 +194,15 @@ def set_value(cfg: Config, key: str, value: str) -> None:
     if isinstance(current, bool):
         setattr(target, field_name, coerce_bool(value))
     elif isinstance(current, int) and not isinstance(current, bool):
-        setattr(target, field_name, int(value))
+        try:
+            number = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{key} erwartet eine Zahl, nicht {value!r}.") from exc
+        if section == "server" and field_name == "port" and not 1 <= number <= 65535:
+            raise ValueError("server.port muss zwischen 1 und 65535 liegen.")
+        setattr(target, field_name, number)
     else:
-        setattr(target, field_name, value)
+        if section == "server" and field_name == "host" and not value.strip():
+            raise ValueError("server.host darf nicht leer sein.")
+        setattr(target, field_name, value.strip() if field_name in {"host", "base_url", "model", "provider"} else value)
     cfg.save()

@@ -86,6 +86,14 @@ def cosine(left: list[float], right: list[float]) -> float:
     return dot / math.sqrt(left_norm * right_norm)
 
 
+def clamp_limit(limit: int, maximum: int = 200) -> int:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        return 50
+    return max(1, min(value, maximum))
+
+
 class Store:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,6 +106,7 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        self._migrate_scopes()
 
     def close(self) -> None:
         with self._lock:
@@ -154,17 +163,21 @@ class Store:
         return row_to_dict(row) if row else None
 
     def find_exact(self, scope: str, text: str) -> dict | None:
+        # SQLite's lower() only folds ASCII, which breaks German umlauts.
+        needle = text.strip().casefold()
         with self._lock:
-            row = self.conn.execute(
+            rows = self.conn.execute(
                 """
                 SELECT * FROM memories
                 WHERE scope = ? AND forgotten = 0 AND superseded_by IS NULL
-                  AND lower(text) = lower(?)
-                ORDER BY id DESC LIMIT 1
+                ORDER BY id DESC
                 """,
-                (scope, text.strip()),
-            ).fetchone()
-        return row_to_dict(row) if row else None
+                (scope,),
+            ).fetchall()
+        for row in rows:
+            if row["text"].strip().casefold() == needle:
+                return row_to_dict(row)
+        return None
 
     def update_text(self, memory_id: str, text: str, embedding: list[float] | None, kind: str | None = None) -> dict:
         current = self.get(memory_id)
@@ -223,19 +236,31 @@ class Store:
             )
             self.conn.commit()
 
-    def supersede(self, old_ids: list[str], new_id: str) -> None:
+    def supersede(self, old_ids: list[str], new_id: str, *, scope: str | None = None) -> int:
+        """Mark old rows as replaced. Returns how many rows actually changed.
+
+        With a scope, ids from another scope are left alone so one repository
+        can never retire a fact that belongs somewhere else.
+        """
         now = utc_now()
+        updated = 0
         with self._lock:
             for old_id in old_ids:
-                self.conn.execute(
-                    """
+                if not isinstance(old_id, str) or not old_id or old_id == new_id:
+                    continue
+                sql = """
                     UPDATE memories
                     SET superseded_by = ?, pinned = 0, updated_at = ?
                     WHERE uuid = ? AND uuid != ?
-                    """,
-                    (new_id, now, old_id, new_id),
-                )
+                      AND forgotten = 0 AND superseded_by IS NULL
+                """
+                params: list = [new_id, now, old_id, new_id]
+                if scope:
+                    sql += " AND scope = ?"
+                    params.append(scope)
+                updated += self.conn.execute(sql, params).rowcount
             self.conn.commit()
+        return updated
 
     def list_memories(
         self,
@@ -248,7 +273,7 @@ class Store:
         where, params = _active_scope(scope, include_global)
         if pinned_only:
             where += " AND pinned = 1"
-        params.append(limit)
+        params.append(clamp_limit(limit))
         with self._lock:
             rows = self.conn.execute(
                 f"""
@@ -257,6 +282,16 @@ class Store:
                 ORDER BY pinned DESC, updated_at DESC
                 LIMIT ?
                 """,
+                params,
+            ).fetchall()
+        return [row_to_dict(row) for row in rows]
+
+    def all_active(self, scope: str | None = None) -> list[dict]:
+        """Every active row in a scope, for dream and reembed. No page limit."""
+        where, params = _active_scope(scope, include_global=False)
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM memories WHERE {where} ORDER BY id",
                 params,
             ).fetchall()
         return [row_to_dict(row) for row in rows]
@@ -314,7 +349,7 @@ class Store:
         """
         try:
             with self._lock:
-                rows = self.conn.execute(sql, [match, *params, limit]).fetchall()
+                rows = self.conn.execute(sql, [match, *params, clamp_limit(limit, 200)]).fetchall()
         except sqlite3.OperationalError:
             return {}
         scores: dict[str, float] = {}
@@ -323,22 +358,53 @@ class Store:
             scores[row["uuid"]] = -rank
         if not scores:
             return {}
-        best = max(scores.values()) or 1.0
+        best = max(scores.values())
         worst = min(scores.values())
-        span = best - worst or 1.0
+        if best == worst:
+            # One hit, or every hit equally relevant. A zero span used to
+            # collapse all scores to 0 and hide them from the result list.
+            return {key: 1.0 for key in scores}
+        span = best - worst
         return {key: (value - worst) / span for key, value in scores.items()}
 
     def get_many(self, ids: list[str]) -> list[dict]:
         if not ids:
             return []
-        marks = ",".join("?" for _ in ids)
+        by_id: dict[str, dict] = {}
         with self._lock:
-            rows = self.conn.execute(
-                f"SELECT * FROM memories WHERE uuid IN ({marks})",
-                ids,
-            ).fetchall()
-        by_id = {row["uuid"]: row_to_dict(row) for row in rows}
+            # Chunked so a large candidate list never exceeds SQLite's
+            # parameter limit.
+            for start in range(0, len(ids), 500):
+                chunk = ids[start : start + 500]
+                marks = ",".join("?" for _ in chunk)
+                rows = self.conn.execute(
+                    f"SELECT * FROM memories WHERE uuid IN ({marks})",
+                    chunk,
+                ).fetchall()
+                by_id.update({row["uuid"]: row_to_dict(row) for row in rows})
         return [by_id[memory_id] for memory_id in ids if memory_id in by_id]
+
+    def _migrate_scopes(self) -> None:
+        """Rewrite scopes that were stored in an older, unnormalized form.
+
+        Older builds could keep a git URL with credentials in the scope column.
+        Normalizing once removes those tokens from the database.
+        """
+        from memoryforge.scope import normalize_scope
+
+        with self._lock:
+            rows = self.conn.execute("SELECT DISTINCT scope FROM memories").fetchall()
+            changed = 0
+            for row in rows:
+                old = row["scope"]
+                new = normalize_scope(old) or "global"
+                if new != old:
+                    changed += self.conn.execute(
+                        "UPDATE memories SET scope = ? WHERE scope = ?",
+                        (new, old),
+                    ).rowcount
+            if changed:
+                self.conn.commit()
 
     def backup_to(self, dest: Path) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -356,7 +422,9 @@ def fts_query(text: str) -> str | None:
     tokens = re.findall(r"\w+", text, flags=re.UNICODE)
     if not tokens:
         return None
-    parts = ['"' + token.replace('"', "") + '"' for token in tokens[:12]]
+    # Search the text column only. Without the column filter a query like
+    # "github" or "fact" matches the scope and kind columns of every row.
+    parts = ['text : "' + token.replace('"', "") + '"' for token in tokens[:12]]
     return " OR ".join(parts)
 
 

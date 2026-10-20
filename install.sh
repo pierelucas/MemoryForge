@@ -37,6 +37,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+export PATH="${HOME}/.local/bin:${PATH}"
+
 if ! command -v uv >/dev/null 2>&1; then
   echo "Installiere uv…"
   curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -48,9 +50,18 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
+# uv may install tool binaries outside ~/.local/bin (UV_TOOL_BIN_DIR).
+TOOL_BIN="$(uv tool dir --bin 2>/dev/null || true)"
+export PATH="${TOOL_BIN:-${HOME}/.local/bin}:${PATH}"
+
 echo "Installiere memoryforge…"
 uv tool install --force --from "${ROOT}" memoryforge
 hash -r || true
+
+if ! command -v memoryforge >/dev/null 2>&1; then
+  echo "memoryforge liegt nicht im PATH. Nimm ${TOOL_BIN:-${HOME}/.local/bin} in den PATH." >&2
+  exit 1
+fi
 
 if [[ -n "${RESTORE}" ]]; then
   if [[ ! -f "${RESTORE}" ]]; then

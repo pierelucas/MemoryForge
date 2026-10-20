@@ -40,7 +40,10 @@ def build_mcp() -> MCPServer:
         If scope is omitted, a local stdio session uses the git remote of the working directory.
         """
         resolved = _scope_or_detect(scope)
-        result = get_service().add(text, scope=resolved, source=source or "mcp", detect=False)
+        try:
+            result = get_service().add(text, scope=resolved, source=source or "mcp", detect=False)
+        except ValueError as exc:
+            return _error(str(exc))
         return _dump(
             {
                 "scope": resolved or "global",
@@ -61,13 +64,19 @@ def build_mcp() -> MCPServer:
     @mcp.tool(description="Forget one memory by id.")
     def memory_forget(memory_id: str) -> str:
         """Soft-delete a memory so it no longer appears in search."""
-        get_service().forget(memory_id.strip())
+        try:
+            get_service().forget(memory_id.strip())
+        except KeyError:
+            return _error(f"Unbekannte Id: {memory_id.strip()}")
         return _dump({"forgotten": memory_id.strip()})
 
     @mcp.tool(description="Pin or unpin a memory so it stays in the session brief.")
     def memory_pin(memory_id: str, pinned: bool = True) -> str:
         """Pin a memory (or unpin it when pinned is false)."""
-        row = get_service().pin(memory_id.strip(), pinned)
+        try:
+            row = get_service().pin(memory_id.strip(), pinned)
+        except KeyError:
+            return _error(f"Unbekannte Id: {memory_id.strip()}")
         return _dump(_public(row))
 
     @mcp.tool(description="Compact session-start card: pinned memories plus recent ones.")
@@ -107,6 +116,10 @@ def _public(row: dict) -> dict:
         "score": row.get("score"),
         "updated_at": row["updated_at"],
     }
+
+
+def _error(message: str) -> str:
+    return _dump({"error": message})
 
 
 def _dump(data: dict) -> str:

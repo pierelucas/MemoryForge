@@ -1,10 +1,7 @@
-import json
-
 import pytest
 
 from memoryforge.config import load_config, set_value
 from memoryforge.llm import parse_actions
-from memoryforge.safety import redact
 from memoryforge.scope import normalize_remote, normalize_scope
 from memoryforge.service import MemoryService
 
