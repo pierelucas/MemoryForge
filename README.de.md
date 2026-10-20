@@ -56,7 +56,7 @@ Das Skript installiert `uv`, falls es fehlt, und danach das Kommando `memoryforg
 ./install.sh --yes --service
 ```
 
-`--service` richtet einen Benutzerdienst ein: systemd unter Linux, launchd unter macOS. Unter Windows läuft der Dienst im Vordergrund mit `memoryforge serve`.
+`--service` richtet einen Benutzerdienst ein: systemd unter Linux, launchd unter macOS. Unter Windows läuft der Dienst im Vordergrund mit `memoryforge serve`. Der Dienst startet beim Login. Soll er auch ohne Anmeldung laufen, einmalig `loginctl enable-linger "$USER"` ausführen.
 
 | | |
 |---|---|
@@ -261,6 +261,15 @@ Ein ZIP mit zusätzlichen Pfaden oder `..` wird abgelehnt. Eine Formatversion, d
 Dieselbe Datei gibt es in der Oberfläche: **Backup** in der Leiste enthält den Key. In den Einstellungen gibt es einen zweiten Knopf ohne Key.
 
 ## Deinstallation
+
+```bash
+./uninstall.sh            # Dienst und Kommando entfernen, Daten bleiben
+./uninstall.sh --purge    # zusätzlich Konfiguration und Datenbank löschen
+```
+
+Das Skript stoppt den Dienst, meldet die systemd-Unit ab, entfernt den LaunchAgent auf macOS und deinstalliert das Kommando. `uv` bleibt installiert. Die OpenCode-Konfiguration wird nicht verändert; den `memoryforge`-Eintrag dort von Hand oder unter `/mcps` entfernen.
+
+Von Hand:
 
 ```bash
 memoryforge stop

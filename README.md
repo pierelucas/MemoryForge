@@ -56,7 +56,7 @@ The script installs `uv` if it is missing, then installs the `memoryforge` comma
 ./install.sh --yes --service
 ```
 
-`--service` installs a user service: systemd on Linux, launchd on macOS. On Windows, run `memoryforge serve` in the foreground.
+`--service` installs a user service: systemd on Linux, launchd on macOS. On Windows, run `memoryforge serve` in the foreground. The service starts at login. To keep it running without a login, run `loginctl enable-linger "$USER"` once.
 
 | | |
 |---|---|
@@ -261,6 +261,15 @@ A zip with extra paths or `..` is rejected. So is a format version this build do
 The notebook can download the same zip: **Backup** in the sidebar includes the key. Settings has a second button without it.
 
 ## Uninstall
+
+```bash
+./uninstall.sh            # remove the service and command, keep the data
+./uninstall.sh --purge    # also remove config and database
+```
+
+The script stops the service, disables the systemd unit, removes the macOS LaunchAgent, and uninstalls the command. It leaves `uv` installed. The OpenCode configuration is not touched; remove the `memoryforge` entry there or under `/mcps`.
+
+By hand:
 
 ```bash
 memoryforge stop
