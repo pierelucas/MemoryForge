@@ -2,7 +2,7 @@
 
 Lokales Gedächtnis für Coding-Agenten. OpenCode, Cursor, Claude Code und jeder andere MCP-Client lesen und schreiben dieselben kurzen Fakten. Die Daten sind eine SQLite-Datei auf deinem Rechner. Ein Sprachmodell ist optional. Die Suche ruft keines.
 
-Die Oberfläche ist deutsch. [English](README.md).
+Die Oberfläche ist standardmäßig englisch, Deutsch lässt sich in den **Einstellungen** wählen. [English](README.md).
 
 ## Was gespeichert wird
 
@@ -79,11 +79,13 @@ memoryforge doctor
 
 Standardadresse: <http://127.0.0.1:4737/>
 
-In der Leiste stehen die Scopes. **Alle** zeigt alles. **Global** nur globale Fakten. Ein Repository zeigt dieses Repository und darunter die globalen Fakten, die ein Agent dort mitliest. Die Suche in einem Repository durchsucht beide.
+In der Leiste stehen die Scopes. **Alle** zeigt alles. **Global** nur globale Fakten. Ein Repository zeigt dieses Repository und darunter die globalen Fakten, die ein Agent dort mitliest. Die Suche in einem Repository durchsucht beide. **Scope löschen** auf einer Scope-Seite blendet nach einer Bestätigungsseite alle aktiven Fakten darin aus. Die Zeilen bleiben in der Datei. **Alle** ist eine Ansicht, kein Scope, und hat deshalb keinen Lösch-Link.
 
 **Merken** speichert einen Fakt im Scope über dem Knopf. **Anderer Scope** ist für einen Namen, den es noch nicht gibt. Eine Git-URL in dem Feld wird umgeschrieben. `/` setzt den Fokus in die Suche. Strg+Enter oder Cmd+Enter speichert die Notiz, in der du gerade tippst.
 
-**Anheften** hält einen Fakt in der Session-Karte (`memory_brief`). **Vergessen** blendet ihn aus Suche, Liste und MCP aus. Die Zeile bleibt in der Datei. **Bearbeiten** ersetzt den Text und erneuert das Embedding. Das Formular setzt keine Art. Ohne Modell werden Notizen aus der Oberfläche als `fact` gespeichert. Mit Modell kann eine längere Notiz zerlegt oder eingeordnet werden.
+**Anheften** hält einen Fakt in der Session-Karte (`memory_brief`). **Vergessen** blendet ihn aus Suche, Liste und MCP aus. Die Zeile bleibt in der Datei. **Bearbeiten** ersetzt den Text und erneuert das Embedding. Die Scope-Auswahl im Formular verschiebt den Fakt in einen anderen Scope oder unter einen neuen Namen. Ein Umzug in einen Scope, in dem derselbe Text schon steht, wird abgelehnt. Das Formular setzt keine Art. Ohne Modell werden Notizen aus der Oberfläche als `fact` gespeichert. Mit Modell kann eine längere Notiz zerlegt oder eingeordnet werden.
+
+In den **Einstellungen** stehen die KI-Optionen, die Sprache (Englisch oder Deutsch), Prüfen und Träumen sowie der Backup-Download mit und ohne Key.
 
 `autostart` in der Konfiguration merkt sich nur den Wunsch. Der Start beim Login kommt von `memoryforge install-service` oder `./install.sh --service`.
 
@@ -113,6 +115,7 @@ memoryforge config set llm.base_url https://api.deepseek.com
 memoryforge config set llm.model deepseek-flash
 memoryforge config set llm.api_key sk-...
 memoryforge config set llm.thinking false
+memoryforge config set ui.lang de
 memoryforge config show
 ```
 
@@ -220,9 +223,12 @@ api_key = ""
 
 [embed]
 model = "BAAI/bge-small-en-v1.5"
+
+[ui]
+lang = "en"
 ```
 
-`memoryforge config set section.feld wert`. Boolesche Werte: `true`, `false`, `ja`, `nein`, `an`, `aus`.
+`memoryforge config set section.feld wert`. Boolesche Werte: `true`, `false`, `ja`, `nein`, `an`, `aus`. `ui.lang` nimmt `en` oder `de`; fehlt der Wert oder ist er unbekannt, gilt Englisch.
 
 ## Umzug
 
@@ -258,7 +264,7 @@ Der laufende Dienst wird vorher gestoppt. Die Dateien landen in den üblichen Or
 
 Ein ZIP mit zusätzlichen Pfaden oder `..` wird abgelehnt. Eine Formatversion, die dieses Programm nicht kennt, ebenfalls. Beides, bevor etwas überschrieben wird.
 
-Dieselbe Datei gibt es in der Oberfläche: **Backup** in der Leiste enthält den Key. In den Einstellungen gibt es einen zweiten Knopf ohne Key.
+Dieselbe Datei gibt es in der Oberfläche unter **Einstellungen** → **Umzug**: ein Knopf mit Key, einer ohne Key.
 
 ## Deinstallation
 

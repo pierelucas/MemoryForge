@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Erinnerungen · MemoryForge{% endblock %}
+{% block title %}{{ t('index.title') }}{% endblock %}
 {% macro card(row) %}
 <article class="card {% if row.pinned %}is-pinned{% endif %}">
   <p class="body">{{ row.text }}</p>
@@ -9,31 +9,46 @@
       {% if not active or active != row.scope %}
       <span class="pill" title="{{ row.scope }}">{{ row.scope_label }}</span>
       {% endif %}
-      {% if row.pinned %}<span class="pill is-accent">Angeheftet</span>{% endif %}
+      {% if row.pinned %}<span class="pill is-accent">{{ t('index.pinned') }}</span>{% endif %}
       <time datetime="{{ row.updated_at }}">{{ row.when }}</time>
       {% if row.score is defined and q %}<span class="pill">{{ '%.2f'|format(row.score) }}</span>{% endif %}
     </div>
     <div class="actions">
       <form method="post" action="/memories/{{ row.id }}/pin">
         <input type="hidden" name="scope" value="{{ active }}">
-        <button type="submit">{{ "Lösen" if row.pinned else "Anheften" }}</button>
+        <button type="submit">{{ t('index.unpin') if row.pinned else t('index.pin') }}</button>
       </form>
-      <a href="/memories/{{ row.id }}/forget">Vergessen</a>
+      <a href="/memories/{{ row.id }}/forget">{{ t('index.forget') }}</a>
     </div>
   </div>
   <details>
-    <summary>Bearbeiten</summary>
+    <summary>{{ t('index.edit') }}</summary>
     <form method="post" action="/memories/{{ row.id }}">
-      <input type="hidden" name="scope" value="{{ active or row.scope }}">
+      <input type="hidden" name="scope" value="{{ active }}">
       <textarea name="text" rows="4">{{ row.text }}</textarea>
-      <button type="submit">Speichern</button>
+      <label class="inline">
+        {{ t('index.scope') }}
+        <select name="memory_scope">
+          <option value="global" {% if row.scope == 'global' %}selected{% endif %}>Global</option>
+          {% for item in scopes %}
+            {% if item.scope != 'global' %}
+            <option value="{{ item.scope }}" title="{{ item.scope }}" {% if row.scope == item.scope %}selected{% endif %}>{{ item.path_label }}</option>
+            {% endif %}
+          {% endfor %}
+          {% if row.scope != 'global' and not scopes | selectattr('scope', 'equalto', row.scope) | list %}
+          <option value="{{ row.scope }}" selected>{{ row.scope }}</option>
+          {% endif %}
+        </select>
+      </label>
+      <input name="scope_custom" placeholder="project:github.com/owner/repo" spellcheck="false" autocomplete="off">
+      <button type="submit">{{ t('index.save') }}</button>
     </form>
   </details>
 </article>
 {% endmacro %}
 {% block main %}
 <header class="mast">
-  {% set ns = namespace(heading='Alle', full='') %}
+  {% set ns = namespace(heading=t('nav.all'), full='') %}
   {% if active == 'global' %}{% set ns.heading = 'Global' %}{% endif %}
   {% for item in scopes %}
     {% if item.scope == active %}{% set ns.heading = item.label %}{% set ns.full = item.scope %}{% endif %}
@@ -43,35 +58,38 @@
     <p class="count">{{ rows|length + (also|length if also else 0) }}</p>
   </div>
   {% if q %}
-  <p class="lede">{{ rows|length }} Treffer für „{{ q }}“.</p>
+  <p class="lede">{{ t('index.matches', count=rows|length, query=q) }}</p>
   {% elif active == 'global' %}
-  <p class="lede">Gilt in jedem Projekt. Agenten lesen das hier mit, egal in welchem Repo sie stehen.</p>
+  <p class="lede">{{ t('index.lede_global') }}</p>
   {% elif active %}
-  <p class="lede" title="{{ ns.full }}">Dieses Repository. Darunter die globalen Fakten, die hier mitgelesen werden.</p>
+  <p class="lede" title="{{ ns.full }}">{{ t('index.lede_project') }}</p>
   {% else %}
-  <p class="lede">Alles, was gespeichert ist. Die Suche eines Projekts sieht nur dieses Projekt plus Global.</p>
+  <p class="lede">{{ t('index.lede_all') }}</p>
+  {% endif %}
+  {% if active %}
+  <p class="hint"><a class="text-link" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a></p>
   {% endif %}
 </header>
 
 <form class="search" method="get" action="/">
   {% if active %}<input type="hidden" name="scope" value="{{ active }}">{% endif %}
-  <label class="sr" for="q">Suchen</label>
+  <label class="sr" for="q">{{ t('index.search') }}</label>
   <div class="search-field">
-    <input id="q" type="search" name="q" value="{{ q }}" placeholder="Suchen" autocomplete="off">
+    <input id="q" type="search" name="q" value="{{ q }}" placeholder="{{ t('index.search') }}" autocomplete="off">
     <kbd class="hint-key" aria-hidden="true">/</kbd>
   </div>
-  <button type="submit">Suchen</button>
+  <button type="submit">{{ t('index.search') }}</button>
   {% if q %}
-  <a class="text-link" href="/{% if active %}?scope={{ active | urlencode }}{% endif %}">Leeren</a>
+  <a class="text-link" href="/{% if active %}?scope={{ active | urlencode }}{% endif %}">{{ t('index.clear') }}</a>
   {% endif %}
 </form>
 
 <form class="composer" method="post" action="/memories">
-  <label for="text">Neue Erinnerung</label>
-  <textarea id="text" name="text" rows="3" required placeholder="Ein Satz, der nächste Woche noch stimmt. Keine Keys."></textarea>
+  <label for="text">{{ t('index.new') }}</label>
+  <textarea id="text" name="text" rows="3" required placeholder="{{ t('index.composer_placeholder') }}"></textarea>
   <div class="composer-row">
     <label class="inline">
-      Scope
+      {{ t('index.scope') }}
       {% set selected = namespace(found=false) %}
       {% for item in scopes %}
         {% if item.scope == active %}{% set selected.found = true %}{% endif %}
@@ -88,33 +106,33 @@
         {% endif %}
       </select>
     </label>
-    <button type="submit">Merken</button>
+    <button type="submit">{{ t('index.remember') }}</button>
   </div>
   <details class="scope-extra">
-    <summary>Anderer Scope</summary>
+    <summary>{{ t('index.other_scope') }}</summary>
     <label class="inline">
-      Neuer oder voller Name
+      {{ t('index.scope_name') }}
       <input name="scope_custom" placeholder="project:github.com/owner/repo" spellcheck="false" autocomplete="off">
     </label>
-    <p class="hint">Wenn das Feld gefüllt ist, gilt es statt der Auswahl oben. Eine Git-URL wird umgeschrieben.</p>
+    <p class="hint">{{ t('index.scope_custom_hint') }}</p>
   </details>
 </form>
 
 {% if not rows and not also %}
-<p class="empty">{% if q %}Nichts gefunden.{% else %}Noch nichts in dieser Ansicht.{% endif %}</p>
+<p class="empty">{% if q %}{{ t('index.empty_search') }}{% else %}{{ t('index.empty_view') }}{% endif %}</p>
 {% endif %}
 
 {% if rows %}
-<section class="list" aria-label="Erinnerungen">
+<section class="list" aria-label="{{ t('index.title') }}">
   {% for row in rows %}{{ card(row) }}{% endfor %}
 </section>
 {% elif active and active != 'global' and not q %}
-<p class="empty">In diesem Projekt liegt noch nichts.</p>
+<p class="empty">{{ t('index.empty_project') }}</p>
 {% endif %}
 
 {% if also %}
-<h2 class="section-title">Global <span>wird hier mitgelesen</span></h2>
-<section class="list" aria-label="Globale Erinnerungen">
+<h2 class="section-title">{{ t('index.global_section') }} <span>{{ t('index.global_section_hint') }}</span></h2>
+<section class="list" aria-label="{{ t('index.global_section') }}">
   {% for row in also %}{{ card(row) }}{% endfor %}
 </section>
 {% endif %}

@@ -12,6 +12,8 @@ except ModuleNotFoundError:  # Python 3.10
 
 import tomli_w
 
+from memoryforge.i18n import LANGS, normalize_lang
+
 PROVIDERS: dict[str, dict] = {
     "deepseek": {
         "label": "DeepSeek",
@@ -41,13 +43,6 @@ PROVIDERS: dict[str, dict] = {
 }
 
 KINDS = ("preference", "decision", "convention", "fact", "debug")
-KIND_LABELS = {
-    "preference": "Vorliebe",
-    "decision": "Entscheidung",
-    "convention": "Konvention",
-    "fact": "Fakt",
-    "debug": "Debug",
-}
 
 
 def model_catalog() -> list[dict[str, str]]:
@@ -97,10 +92,16 @@ class EmbedConfig:
 
 
 @dataclass
+class UIConfig:
+    lang: str = "en"
+
+
+@dataclass
 class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     embed: EmbedConfig = field(default_factory=EmbedConfig)
+    ui: UIConfig = field(default_factory=UIConfig)
     path: object | None = None
 
     def to_dict(self) -> dict:
@@ -108,6 +109,7 @@ class Config:
             "server": asdict(self.server),
             "llm": asdict(self.llm),
             "embed": asdict(self.embed),
+            "ui": asdict(self.ui),
         }
 
     def masked(self) -> dict:
@@ -160,7 +162,8 @@ def load_config() -> Config:
     server = data.get("server") or {}
     llm = data.get("llm") or {}
     embed = data.get("embed") or {}
-    if not all(isinstance(section, dict) for section in (server, llm, embed)):
+    ui = data.get("ui") or {}
+    if not all(isinstance(section, dict) for section in (server, llm, embed, ui)):
         raise ConfigError(f"Konfiguration {path} enthält einen ungültigen Abschnitt.")
     cfg.server.autostart = coerce_bool(server.get("autostart"), False)
     cfg.server.host = str(server.get("host") or "127.0.0.1")
@@ -180,16 +183,24 @@ def load_config() -> Config:
     cfg.llm.thinking = coerce_bool(llm.get("thinking"), False)
     cfg.llm.api_key = str(llm.get("api_key") or "")
     cfg.embed.model = str(embed.get("model") or "BAAI/bge-small-en-v1.5")
+    cfg.ui.lang = normalize_lang(ui.get("lang"))
     return cfg
 
 
 def set_value(cfg: Config, key: str, value: str) -> None:
     section, _, field_name = key.partition(".")
-    if section not in {"server", "llm", "embed"} or not field_name:
+    if section not in {"server", "llm", "embed", "ui"} or not field_name:
         raise ValueError("Schlüssel muss wie llm.model aussehen.")
     target = getattr(cfg, section)
     if not hasattr(target, field_name):
         raise ValueError(f"Unbekanntes Feld: {key}")
+    if section == "ui" and field_name == "lang":
+        text = value.strip().lower()
+        if text not in LANGS:
+            raise ValueError(f"ui.lang muss {' oder '.join(LANGS)} sein.")
+        target.lang = text
+        cfg.save()
+        return
     current = getattr(target, field_name)
     if isinstance(current, bool):
         setattr(target, field_name, coerce_bool(value))

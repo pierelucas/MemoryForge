@@ -179,7 +179,14 @@ class Store:
                 return row_to_dict(row)
         return None
 
-    def update_text(self, memory_id: str, text: str, embedding: list[float] | None, kind: str | None = None) -> dict:
+    def update_text(
+        self,
+        memory_id: str,
+        text: str,
+        embedding: list[float] | None,
+        kind: str | None = None,
+        scope: str | None = None,
+    ) -> dict:
         current = self.get(memory_id)
         if current is None:
             raise KeyError(memory_id)
@@ -187,13 +194,14 @@ class Store:
             self.conn.execute(
                 """
                 UPDATE memories
-                SET text = ?, embedding = ?, kind = ?, updated_at = ?
+                SET text = ?, embedding = ?, kind = ?, scope = ?, updated_at = ?
                 WHERE uuid = ?
                 """,
                 (
                     text,
                     pack_vec(embedding) if embedding else None,
                     kind or current["kind"],
+                    scope or current["scope"],
                     utc_now(),
                     memory_id,
                 ),
@@ -235,6 +243,20 @@ class Store:
                 (utc_now(), memory_id),
             )
             self.conn.commit()
+
+    def forget_scope(self, scope: str) -> int:
+        """Hide every active row in a scope. Returns how many rows changed."""
+        with self._lock:
+            cur = self.conn.execute(
+                """
+                UPDATE memories
+                SET forgotten = 1, pinned = 0, updated_at = ?
+                WHERE scope = ? AND forgotten = 0 AND superseded_by IS NULL
+                """,
+                (utc_now(), scope),
+            )
+            self.conn.commit()
+            return cur.rowcount
 
     def supersede(self, old_ids: list[str], new_id: str, *, scope: str | None = None) -> int:
         """Mark old rows as replaced. Returns how many rows actually changed.

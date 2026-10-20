@@ -2,7 +2,7 @@
 
 Local memory for coding agents. OpenCode, Cursor, Claude Code, and any other MCP client read and write the same short facts. The data is one SQLite file on your machine. A language model is optional, and search never calls one.
 
-The notebook UI is in German. [Deutsche Anleitung](README.de.md).
+The notebook UI is in English by default; German is a switch in **Settings**. [Deutsche Anleitung](README.de.md).
 
 ## What it stores
 
@@ -79,11 +79,13 @@ memoryforge doctor
 
 Default URL: <http://127.0.0.1:4737/>
 
-The sidebar is the scope list. **Alle** shows everything. **Global** shows only global facts. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both.
+The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a scope page hides every active fact in it after a confirmation page. The rows stay in the file, and **All** is a view, not a scope, so it has no delete link.
 
-**Merken** stores one fact in the scope selected above the button. **Anderer Scope** is for a scope that does not exist yet. A git URL in that field is normalized. `/` focuses search. Ctrl+Enter or Cmd+Enter submits the note you are typing.
+**Remember** stores one fact in the scope selected above the button. **Other scope** is for a scope that does not exist yet. A git URL in that field is normalized. `/` focuses search. Ctrl+Enter or Cmd+Enter submits the note you are typing.
 
-**Anheften** keeps a fact on the session card (`memory_brief`). **Vergessen** hides a fact from search, the list, and MCP. The row stays in the file. **Bearbeiten** replaces the text and refreshes the embedding. The form does not set a kind. With the model off, UI notes are stored as `fact`. With the model on, a longer note may be split or classified.
+**Pin** keeps a fact on the session card (`memory_brief`). **Forget** hides a fact from search, the list, and MCP. The row stays in the file. **Edit** replaces the text and refreshes the embedding, and its scope select moves the fact to another scope or to a new name. A move into a scope that already holds the same text is rejected. The form does not set a kind. With the model off, UI notes are stored as `fact`. With the model on, a longer note may be split or classified.
+
+**Settings** holds the AI options, the language (English or German), the check and dream buttons, and the backup download with and without the key.
 
 `autostart` in the config only records the wish. Login startup comes from `memoryforge install-service` or `./install.sh --service`.
 
@@ -113,6 +115,7 @@ memoryforge config set llm.base_url https://api.deepseek.com
 memoryforge config set llm.model deepseek-flash
 memoryforge config set llm.api_key sk-...
 memoryforge config set llm.thinking false
+memoryforge config set ui.lang de
 memoryforge config show
 ```
 
@@ -220,9 +223,12 @@ api_key = ""
 
 [embed]
 model = "BAAI/bge-small-en-v1.5"
+
+[ui]
+lang = "en"
 ```
 
-`memoryforge config set section.field value`. Booleans: `true`, `false`, `ja`, `nein`, `an`, `aus`.
+`memoryforge config set section.field value`. Booleans: `true`, `false`, `ja`, `nein`, `an`, `aus`. `ui.lang` takes `en` or `de`; a missing or unknown value falls back to English.
 
 ## Move to another machine
 
@@ -258,7 +264,7 @@ Restore stops a running server first. Files land in the usual directories on **t
 
 A zip with extra paths or `..` is rejected. So is a format version this build does not know. Both checks happen before anything is overwritten.
 
-The notebook can download the same zip: **Backup** in the sidebar includes the key. Settings has a second button without it.
+The notebook can download the same zip from **Settings** under **Move**: one button with the key, one without.
 
 ## Uninstall
 

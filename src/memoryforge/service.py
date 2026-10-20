@@ -18,6 +18,15 @@ _service: MemoryService | None = None
 _service_key: tuple | None = None
 
 
+class MemoryError(ValueError):
+    """A user-facing error with a key for the translated UI."""
+
+    def __init__(self, key: str, german: str, **params) -> None:
+        self.key = key
+        self.params = params
+        super().__init__(german)
+
+
 class MemoryService:
     def __init__(self, cfg: Config, store: Store | None = None, embedder: Embedder | None = None, llm=None) -> None:
         self.cfg = cfg
@@ -180,25 +189,62 @@ class MemoryService:
     def forget(self, memory_id: str) -> None:
         self.store.forget(memory_id)
 
+    def forget_scope(self, scope: str) -> int:
+        resolved = normalize_scope(scope)
+        if not resolved:
+            raise MemoryError("error.invalid_scope", "Ungültiger Scope.")
+        return self.store.forget_scope(resolved)
+
     def pin(self, memory_id: str, pinned: bool = True) -> dict:
         return self.store.set_pinned(memory_id, pinned)
 
-    def update(self, memory_id: str, text: str) -> dict:
+    def update(self, memory_id: str, text: str, scope: str | None = None) -> dict:
+        current = self.store.get(memory_id)
+        if current is None:
+            raise KeyError(memory_id)
         cleaned = redact(text)
         if not cleaned:
-            raise ValueError("Leerer Text.")
+            raise MemoryError("error.empty_text", "Leerer Text.")
+        target = normalize_scope(scope) if scope else current["scope"]
+        if not target:
+            raise MemoryError("error.invalid_scope", "Ungültiger Scope.")
+        if target != current["scope"]:
+            if current["forgotten"]:
+                raise MemoryError(
+                    "error.forgotten_move",
+                    "Vergessene Erinnerungen lassen sich nicht verschieben.",
+                )
+            exact = self.store.find_exact(target, cleaned)
+            if exact and exact["id"] != memory_id:
+                raise MemoryError(
+                    "error.already_in_scope",
+                    f"Dieser Text steht schon in {target}.",
+                    scope=target,
+                )
         embedding = self.embedder.embed_many([cleaned])[0]
-        return self.store.update_text(memory_id, cleaned, embedding)
+        return self.store.update_text(memory_id, cleaned, embedding, scope=target)
 
     def dream(self, scope: str | None = None) -> dict:
         if not self.cfg.llm.enabled:
-            return {"ok": False, "changed": 0, "reviewed": 0, "message": "KI ist aus. Dreaming hat nichts geändert."}
+            return {
+                "ok": False,
+                "changed": 0,
+                "reviewed": 0,
+                "key": "dream.off",
+                "message": "KI ist aus. Dreaming hat nichts geändert.",
+            }
         resolved = normalize_scope(scope) if scope else ""
         # Dream over every active row. The old 80-row page silently skipped
         # older memories once a scope grew.
         rows = self.store.all_active(resolved or None)
         if len(rows) < 2:
-            return {"ok": True, "changed": 0, "reviewed": len(rows), "message": "Zu wenige Erinnerungen zum Träumen."}
+            return {
+                "ok": True,
+                "changed": 0,
+                "reviewed": len(rows),
+                "key": "dream.too_few",
+                "message": "Zu wenige Erinnerungen zum Träumen.",
+            }
         groups: dict[str, list[dict]] = {}
         for row in rows:
             groups.setdefault(row["scope"], []).append(row)
@@ -221,6 +267,8 @@ class MemoryService:
             "ok": True,
             "changed": changed,
             "reviewed": reviewed,
+            "key": "dream.done",
+            "params": {"changed": changed, "reviewed": reviewed},
             "message": f"{changed} Erinnerungen angepasst, {reviewed} geprüft.",
         }
 

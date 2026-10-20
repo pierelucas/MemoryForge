@@ -14,7 +14,8 @@ from starlette.background import BackgroundTask
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from memoryforge import __version__
-from memoryforge.config import KIND_LABELS, PROVIDERS, known_model, load_config, model_catalog
+from memoryforge.config import PROVIDERS, known_model, load_config, model_catalog
+from memoryforge.i18n import kind_label, normalize_lang, translate
 from memoryforge.scope import normalize_scope, scope_label, scope_path_label
 from memoryforge.service import get_service, seed_demo
 
@@ -197,26 +198,43 @@ def create_app() -> FastAPI:
     @app.post("/memories")
     def create_memory(text: str = Form(...), scope: str = Form(""), scope_custom: str = Form("")):
         service = get_service()
+        lang = load_config().ui.lang
         chosen = normalize_scope(scope_custom or scope or "global") or "global"
         try:
             result = service.add(text, scope=chosen, source="ui", detect=False)
         except ValueError as exc:
-            return _redirect("/", err=str(exc))
+            return _redirect("/", err=_error(lang, exc))
         stored_scope = result["memories"][0]["scope"] if result["memories"] else chosen
         if result["noop"]:
-            message = "War schon gespeichert." if result["memories"] else "Nichts Neues gespeichert."
-            return _redirect(_home(stored_scope, message))
-        return _redirect(_home(stored_scope, "Gespeichert."))
+            key = "flash.already_saved" if result["memories"] else "flash.nothing_new"
+            return _redirect(_home(stored_scope, translate(lang, key)))
+        return _redirect(_home(stored_scope, translate(lang, "flash.saved")))
 
     @app.post("/memories/{memory_id}")
-    def edit_memory(memory_id: str, text: str = Form(...), scope: str = Form("")):
+    def edit_memory(
+        memory_id: str,
+        text: str = Form(...),
+        scope: str = Form(""),
+        memory_scope: str = Form(""),
+        scope_custom: str = Form(""),
+    ):
+        service = get_service()
+        lang = load_config().ui.lang
+        current = service.store.get(memory_id)
+        if current is None:
+            raise HTTPException(status_code=404)
+        target = scope_custom.strip() or memory_scope
         try:
-            row = get_service().update(memory_id, text)
+            row = service.update(memory_id, text, scope=target or None)
         except KeyError:
             raise HTTPException(status_code=404) from None
         except ValueError as exc:
-            return _redirect(_home(normalize_scope(scope), ""), err=str(exc))
-        return _redirect(_home(normalize_scope(scope) or row["scope"], "Aktualisiert."))
+            return _redirect(_home(normalize_scope(scope), ""), err=_error(lang, exc))
+        view = normalize_scope(scope)
+        # A move out of the scope you are looking at follows the row, so the
+        # page does not fall back to an empty list.
+        destination = row["scope"] if view and view == current["scope"] != row["scope"] else (view or row["scope"])
+        return _redirect(_home(destination, translate(lang, "flash.updated")))
 
     @app.get("/memories/{memory_id}/forget", response_class=HTMLResponse)
     def forget_confirm(request: Request, memory_id: str):
@@ -226,7 +244,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request,
             "forget.html",
-            _page(request, memory=_view(row), active=row["scope"]),
+            _page(request, memory=_view(row, load_config().ui.lang), active=row["scope"]),
         )
 
     @app.post("/memories/{memory_id}/forget")
@@ -236,7 +254,30 @@ def create_app() -> FastAPI:
         if row is None or row["forgotten"]:
             raise HTTPException(status_code=404)
         service.forget(memory_id)
-        return _redirect(_home(row["scope"], "Vergessen."))
+        return _redirect(_home(row["scope"], translate(load_config().ui.lang, "flash.forgotten")))
+
+    @app.get("/scopes/forget", response_class=HTMLResponse)
+    def forget_scope_confirm(request: Request, scope: str = ""):
+        resolved = normalize_scope(scope)
+        if not resolved:
+            raise HTTPException(status_code=404)
+        counts = {item["scope"]: item["count"] for item in get_service().store.scopes()}
+        if resolved not in counts:
+            raise HTTPException(status_code=404)
+        return templates.TemplateResponse(
+            request,
+            "forget_scope.html",
+            _page(request, active=resolved, target_scope=resolved, count=counts[resolved]),
+        )
+
+    @app.post("/scopes/forget")
+    def forget_scope(scope: str = Form("")):
+        lang = load_config().ui.lang
+        try:
+            count = get_service().forget_scope(scope)
+        except ValueError as exc:
+            return _redirect("/", err=_error(lang, exc))
+        return _redirect("/", msg=translate(lang, "flash.scope_forgotten", count=count))
 
     @app.post("/memories/{memory_id}/pin")
     def pin_memory(memory_id: str, scope: str = Form("")):
@@ -274,8 +315,10 @@ def create_app() -> FastAPI:
         thinking: str = Form(""),
         api_key: str = Form(""),
         clear_key: str = Form(""),
+        lang: str = Form("en"),
     ):
         cfg = load_config()
+        cfg.ui.lang = normalize_lang(lang)
         cfg.llm.enabled = enabled == "1"
         if provider not in PROVIDERS:
             provider = "custom"
@@ -295,28 +338,31 @@ def create_app() -> FastAPI:
         elif api_key.strip():
             cfg.llm.api_key = api_key.strip()
         cfg.save()
-        return _redirect("/settings?msg=" + quote("Gespeichert."))
+        return _redirect("/settings?msg=" + quote(translate(cfg.ui.lang, "flash.saved")))
 
     @app.post("/settings/test")
     def test_settings():
         service = get_service()
+        lang = load_config().ui.lang
         if not service.cfg.llm.enabled:
-            return _redirect("/settings?err=" + quote("KI ist aus."))
+            return _redirect("/settings?err=" + quote(translate(lang, "flash.ai_off")))
         try:
             result = service.llm.ping()
         except Exception as exc:  # noqa: BLE001 — show the provider error on the settings page
             message = str(exc)
             return _redirect("/settings?err=" + quote(message[:240]))
         model = result.get("model") or service.cfg.llm.model
-        return _redirect("/settings?msg=" + quote(f"Erreichbar, Modell {model}."))
+        return _redirect("/settings?msg=" + quote(translate(lang, "flash.reachable", model=model)))
 
     @app.post("/dream")
     def dream(scope: str = Form("")):
+        lang = load_config().ui.lang
         result = get_service().dream(scope or None)
         target = "/settings" if not scope else _home(scope)
         key = "msg" if result.get("ok") else "err"
         join = "&" if "?" in target else "?"
-        return _redirect(f"{target}{join}{key}=" + quote(result.get("message") or "Fertig."))
+        message = translate(lang, result["key"], **result.get("params", {})) if result.get("key") else result.get("message")
+        return _redirect(f"{target}{join}{key}=" + quote(message or translate(lang, "flash.done")))
 
     @app.post("/backup")
     def backup_now(secrets: str = Form("1")):
@@ -360,10 +406,13 @@ def create_app() -> FastAPI:
 
 def _page(request: Request, **extra) -> dict:
     service = get_service()
+    lang = load_config().ui.lang
     scopes = service.store.scopes()
     context = {
         "request": request,
         "version": __version__,
+        "lang": lang,
+        "t": lambda key, **params: translate(lang, key, **params),
         "scopes": [
             {
                 "scope": row["scope"],
@@ -374,22 +423,28 @@ def _page(request: Request, **extra) -> dict:
             for row in scopes
         ],
         "total": service.store.count_active(),
-        "kind_labels": KIND_LABELS,
     }
     context.update(extra)
     if "rows" in context:
-        context["rows"] = [_view(row) for row in context["rows"]]
+        context["rows"] = [_view(row, lang) for row in context["rows"]]
     if "also" in context:
-        context["also"] = [_view(row) for row in context["also"]]
+        context["also"] = [_view(row, lang) for row in context["also"]]
     return context
 
 
-def _view(row: dict) -> dict:
+def _view(row: dict, lang: str) -> dict:
     shown = dict(row)
     shown["scope_label"] = scope_label(row["scope"])
-    shown["kind_label"] = KIND_LABELS.get(row["kind"], row["kind"])
+    shown["kind_label"] = kind_label(lang, row["kind"])
     shown["when"] = (row.get("updated_at") or "")[:16].replace("T", " ")
     return shown
+
+
+def _error(lang: str, exc: Exception) -> str:
+    key = getattr(exc, "key", "")
+    if key:
+        return translate(lang, key, **getattr(exc, "params", {}))
+    return str(exc)
 
 
 def _home(scope: str, msg: str = "") -> str:
@@ -403,7 +458,10 @@ def _home(scope: str, msg: str = "") -> str:
     return "/?" + "&".join(params)
 
 
-def _redirect(url: str, err: str = "") -> RedirectResponse:
+def _redirect(url: str, err: str = "", msg: str = "") -> RedirectResponse:
+    if msg:
+        join = "&" if "?" in url else "?"
+        url = f"{url}{join}msg=" + quote(msg)
     if err:
         join = "&" if "?" in url else "?"
         url = f"{url}{join}err=" + quote(err)

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ t('scope_forget.title') }}{% endblock %}
+{% block main %}
+<header class="mast">
+  <div class="mast-row"><h1>{{ t('scope_forget.heading') }}</h1></div>
+  <p class="lede">{{ t('scope_forget.lede', count=count) }}</p>
+</header>
+<article class="card">
+  <p class="body">{{ target_scope }}</p>
+  <div class="meta">
+    <span class="pill">{{ target_scope | replace('project:', '') }}</span>
+    <span class="pill">{{ count }}</span>
+  </div>
+</article>
+<form method="post" action="/scopes/forget" class="composer-row confirm-row">
+  <input type="hidden" name="scope" value="{{ target_scope }}">
+  <button type="submit" class="danger">{{ t('scope_forget.action') }}</button>
+  <a class="ghost-link" href="/?scope={{ target_scope | urlencode }}">{{ t('scope_forget.cancel') }}</a>
+</form>
+{% endblock %}
