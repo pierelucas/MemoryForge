@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import signal
@@ -16,6 +17,7 @@ import typer
 
 from memoryforge import __version__
 from memoryforge.config import ConfigError, load_config, model_catalog, set_value
+from memoryforge.providers import ProviderError, fetch_models
 from memoryforge.paths import ensure_dirs, log_path, pid_path
 from memoryforge.service import get_service, reset
 
@@ -218,6 +220,41 @@ def reembed() -> None:
 
 
 @app.command()
+def export(
+    output: Path | None = typer.Option(None, "--output", "-o"),
+    scope: str | None = typer.Option(None, "--scope"),
+) -> None:
+    """Schreibt aktive Erinnerungen als JSON. Ohne Konfiguration und ohne Key."""
+    dest = output or Path.cwd() / f"memoryforge-memories-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+    payload = {"format": 1, "memories": get_service().export_rows(scope)}
+    dest.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(dest, 0o600)
+    typer.echo(f"Export: {dest.resolve()} ({len(payload['memories'])})")
+
+
+@app.command("import")
+def import_memories(path: Path = typer.Argument(..., help="memoryforge-memories.json")) -> None:
+    """Übernimmt Erinnerungen aus einem JSON-Export. Dubletten bleiben liegen."""
+    from memoryforge.service import MemoryError
+
+    if not path.is_file():
+        typer.echo(f"Datei nicht gefunden: {path}", err=True)
+        raise typer.Exit(code=1)
+    raw = path.read_bytes()
+    if len(raw) > 2_000_000:
+        typer.echo("Die Datei ist größer als 2 MB.", err=True)
+        raise typer.Exit(code=1)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        result = get_service().import_rows(payload)
+    except (UnicodeError, json.JSONDecodeError, MemoryError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    reset()
+    typer.echo(f"{result['added']} übernommen, {result['skipped']} übersprungen.")
+
+
+@app.command()
 def doctor() -> None:
     """Zeigt Pfade, Zähler und ob die KI an ist."""
     cfg = load_config()
@@ -305,15 +342,31 @@ def config_set(key: str = typer.Argument(...), value: str = typer.Argument(...))
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     reset()
-    typer.echo(f"{key} = {value}")
+    shown = value
+    if key == "llm.api_key" and value.strip():
+        shown = "****" + value.strip()[-4:]
+    typer.echo(f"{key} = {shown}")
 
 
 @config_app.command("models")
-def config_models() -> None:
-    """Listet die mitgelieferten Modellnamen."""
+def config_models(
+    live: bool = typer.Option(False, "--live", help="Modell-IDs vom gespeicherten Anbieter laden"),
+) -> None:
+    """Listet Modellnamen. --live lädt die aktuelle Liste des Anbieters."""
+    if live:
+        cfg = load_config()
+        try:
+            rows = fetch_models(cfg.llm.provider, cfg.llm.base_url, cfg.llm.api_key)
+        except ProviderError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        for row in rows:
+            typer.echo(f"{row['id']:36}  {row['label']}")
+        typer.echo(f"{len(rows)} Modelle von {cfg.llm.provider}.")
+        return
     for row in model_catalog():
-        typer.echo(f"{row['provider']:10}  {row['id']:22}  {row['label']}")
-    typer.echo("Eigene ID: memoryforge config set llm.model <id>")
+        typer.echo(f"{row['provider']:14}  {row['id']:36}  {row['label']}")
+    typer.echo("Aktuelle Liste: memoryforge config models --live")
 
 
 @app.command("install-service")

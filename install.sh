@@ -75,7 +75,7 @@ else
     read -r -p "KI-Extraktion jetzt einrichten? [j/N] " ANSWER || true
     case "${ANSWER:-}" in
       j|J|y|Y)
-        read -r -p "Anbieter [deepseek/openai/custom] (deepseek): " PROVIDER || true
+        read -r -p "Anbieter [deepseek/opencode-go/openai/openrouter/ollama/custom] (deepseek): " PROVIDER || true
         PROVIDER="${PROVIDER:-deepseek}"
         read -r -p "Modell-ID (deepseek-flash): " MODEL || true
         MODEL="${MODEL:-deepseek-flash}"
@@ -90,6 +90,7 @@ else
         fi
         if [[ -n "${KEY}" ]]; then
           memoryforge config set llm.api_key "${KEY}"
+          memoryforge config models --live || true
         fi
         ;;
     esac

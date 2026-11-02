@@ -8,7 +8,7 @@
   <p class="lede">{{ t('settings.lede') }}</p>
 </header>
 
-<form class="sheet" method="post" action="/settings" id="settings-form">
+<form class="sheet" method="post" action="/settings" id="settings-form" data-saved-provider="{{ cfg.llm.provider }}" data-key-set="{{ '1' if cfg.llm.api_key else '0' }}">
   <label>
     {{ t('settings.language') }}
     <select name="lang">
@@ -31,7 +31,7 @@
       {{ t('settings.provider') }}
       <select name="provider" id="provider">
         {% for key, provider in providers.items() %}
-        <option value="{{ key }}" data-url="{{ provider.base_url }}" {% if cfg.llm.provider == key %}selected{% endif %}>{{ t('provider.' ~ key, default=provider.label) }}</option>
+        <option value="{{ key }}" data-url="{{ provider.base_url }}" data-requires-key="{{ '1' if provider.requires_key else '0' }}" data-models-public="{{ '1' if provider.models_public else '0' }}" {% if cfg.llm.provider == key %}selected{% endif %}>{{ t('provider.' ~ key, default=provider.label) }}</option>
         {% endfor %}
       </select>
     </label>
@@ -45,10 +45,15 @@
       {{ t('settings.model') }}
       <select name="model_choice" id="model_choice">
         {% for row in catalog %}
-        <option value="{{ row.id }}" data-provider="{{ row.provider }}" data-url="{{ row.base_url }}" {% if cfg.llm.model == row.id %}selected{% endif %}>{{ row.label }}</option>
+        <option value="{{ row.id }}" data-provider="{{ row.provider }}" data-url="{{ row.base_url }}" {% if cfg.llm.model == row.id and cfg.llm.provider == row.provider %}selected{% endif %}>{{ row.label }}</option>
         {% endfor %}
         <option value="__custom__" {% if not known %}selected{% endif %}>{{ t('settings.model_other') }}</option>
       </select>
+    </label>
+
+    <label>
+      {{ t('settings.model_filter') }}
+      <input id="model_filter" type="search" placeholder="{{ t('settings.model_filter_placeholder') }}" autocomplete="off" spellcheck="false">
     </label>
 
     <label>
@@ -56,6 +61,14 @@
       <input id="model_custom" name="model_custom" value="{{ '' if known else cfg.llm.model }}" placeholder="{{ t('settings.model_custom_placeholder') }}" autocomplete="off" spellcheck="false">
     </label>
   </div>
+  <div class="composer-row">
+    <button type="button" class="ghost" id="models-refresh">{{ t('settings.models_refresh') }}</button>
+  </div>
+  <p id="models-status" class="hint" aria-live="polite"
+     data-loading="{{ t('settings.models_loading') }}"
+     data-ready="{{ t('settings.models_ready') }}"
+     data-empty="{{ t('settings.models_need_key') }}"
+     data-failed="{{ t('settings.models_failed') }}"></p>
   <p class="hint">{{ t('settings.model_hint') }}</p>
 
   <label class="switch">
@@ -70,7 +83,7 @@
   <div class="fields">
     <label>
       {{ t('settings.api_key') }}
-      <input name="api_key" type="password" value="" placeholder="{% if cfg.llm.api_key %}{{ t('settings.key_set') }}{% else %}{{ t('settings.key_unset') }}{% endif %}" autocomplete="off">
+      <input id="api_key" name="api_key" type="password" value="" placeholder="{% if cfg.llm.api_key %}{{ t('settings.key_set') }}{% else %}{{ t('settings.key_unset') }}{% endif %}" autocomplete="off">
     </label>
   </div>
   <label class="switch is-quiet">
@@ -112,7 +125,10 @@
       <input type="hidden" name="secrets" value="0">
       <button type="submit" class="ghost">{{ t('settings.backup_no_key') }}</button>
     </form>
+    <form method="post" action="/export">
+      <button type="submit" class="ghost">{{ t('settings.export_json') }}</button>
+    </form>
   </div>
 </section>
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 {% endblock %}

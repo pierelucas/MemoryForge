@@ -13,59 +13,11 @@ except ModuleNotFoundError:  # Python 3.10
 import tomli_w
 
 from memoryforge.i18n import LANGS, normalize_lang
+from memoryforge.providers import PROVIDERS, known_model, model_catalog
 
-PROVIDERS: dict[str, dict] = {
-    "deepseek": {
-        "label": "DeepSeek",
-        "base_url": "https://api.deepseek.com",
-        "supports_thinking": True,
-        "models": [
-            {"label": "DeepSeek V4.1 Flash", "id": "deepseek-flash"},
-            {"label": "DeepSeek V4 Pro", "id": "deepseek-v4-pro"},
-        ],
-    },
-    "openai": {
-        "label": "OpenAI",
-        "base_url": "https://api.openai.com/v1",
-        "supports_thinking": False,
-        "models": [
-            {"label": "GPT-4.1 nano", "id": "gpt-4.1-nano"},
-            {"label": "GPT-4.1 mini", "id": "gpt-4.1-mini"},
-            {"label": "GPT-4o mini", "id": "gpt-4o-mini"},
-        ],
-    },
-    "custom": {
-        "label": "OpenAI-kompatibel",
-        "base_url": "",
-        "supports_thinking": True,
-        "models": [],
-    },
-}
+__all__ = ["PROVIDERS", "known_model", "model_catalog"]
 
 KINDS = ("preference", "decision", "convention", "fact", "debug")
-
-
-def model_catalog() -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    for key, provider in PROVIDERS.items():
-        for model in provider["models"]:
-            rows.append(
-                {
-                    "provider": key,
-                    "provider_label": provider["label"],
-                    "label": model["label"],
-                    "id": model["id"],
-                    "base_url": provider["base_url"],
-                }
-            )
-    return rows
-
-
-def known_model(model_id: str) -> dict[str, str] | None:
-    for row in model_catalog():
-        if row["id"] == model_id:
-            return row
-    return None
 
 
 @dataclass
@@ -201,6 +153,20 @@ def set_value(cfg: Config, key: str, value: str) -> None:
         target.lang = text
         cfg.save()
         return
+    if section == "llm" and field_name == "provider":
+        key_name = value.strip().lower()
+        if key_name not in PROVIDERS:
+            known = ", ".join(PROVIDERS)
+            raise ValueError(f"Unbekannter Anbieter: {value}. Bekannt: {known}")
+        old_default = (PROVIDERS.get(target.provider) or {}).get("base_url") or ""
+        new_default = PROVIDERS[key_name].get("base_url") or ""
+        target.provider = key_name
+        # A switch from the install prompt used to leave the DeepSeek URL in
+        # place. Keep a URL the user typed themselves.
+        if new_default and (not target.base_url or target.base_url == old_default):
+            target.base_url = new_default
+        cfg.save()
+        return
     current = getattr(target, field_name)
     if isinstance(current, bool):
         setattr(target, field_name, coerce_bool(value))
@@ -215,5 +181,6 @@ def set_value(cfg: Config, key: str, value: str) -> None:
     else:
         if section == "server" and field_name == "host" and not value.strip():
             raise ValueError("server.host darf nicht leer sein.")
-        setattr(target, field_name, value.strip() if field_name in {"host", "base_url", "model", "provider"} else value)
+        strip = field_name in {"host", "base_url", "model", "provider", "api_key"}
+        setattr(target, field_name, value.strip() if strip else value)
     cfg.save()

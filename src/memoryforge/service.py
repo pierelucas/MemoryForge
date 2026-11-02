@@ -202,17 +202,14 @@ class MemoryService:
         current = self.store.get(memory_id)
         if current is None:
             raise KeyError(memory_id)
+        if current["forgotten"] or current["superseded_by"]:
+            raise MemoryError("error.inactive", "Diese Erinnerung ist nicht mehr aktiv.")
         cleaned = redact(text)
         if not cleaned:
             raise MemoryError("error.empty_text", "Leerer Text.")
         target = normalize_scope(scope) if scope else current["scope"]
         if not target:
             raise MemoryError("error.invalid_scope", "Ungültiger Scope.")
-        if target != current["scope"] and current["forgotten"]:
-            raise MemoryError(
-                "error.forgotten_move",
-                "Vergessene Erinnerungen lassen sich nicht verschieben.",
-            )
         # The same text must stay unique within a scope, whether the row is
         # moved or only edited.
         exact = self.store.find_exact(target, cleaned)
@@ -273,6 +270,53 @@ class MemoryService:
             "message": f"{changed} Erinnerungen angepasst, {reviewed} geprüft.",
         }
 
+    def export_rows(self, scope: str | None = None) -> list[dict]:
+        resolved = normalize_scope(scope) if scope else ""
+        rows = self.store.all_active(resolved or None)
+        return [
+            {
+                "text": row["text"],
+                "scope": row["scope"],
+                "kind": row["kind"] if row["kind"] in KINDS else "fact",
+                "pinned": bool(row["pinned"]),
+            }
+            for row in rows
+        ]
+
+    def import_rows(self, payload: object) -> dict:
+        rows = _import_rows(payload)
+        added = 0
+        skipped = 0
+        previous = self.cfg.llm.enabled
+        # Import must not send the archive to the model or rewrite the text.
+        self.cfg.llm.enabled = False
+        try:
+            for item in rows:
+                if not isinstance(item, dict):
+                    skipped += 1
+                    continue
+                text = str(item.get("text") or "")
+                target = normalize_scope(str(item.get("scope") or "global")) or "global"
+                try:
+                    result = self.add(text, scope=target, source="import", detect=False)
+                except ValueError:
+                    skipped += 1
+                    continue
+                if result["noop"] or not result["memories"]:
+                    skipped += 1
+                    continue
+                row = result["memories"][0]
+                kind = item.get("kind")
+                if kind in KINDS and kind != row["kind"]:
+                    self.store.set_kind(row["id"], kind)
+                    row["kind"] = kind
+                if item.get("pinned"):
+                    self.pin(row["id"], True)
+                added += 1
+        finally:
+            self.cfg.llm.enabled = previous
+        return {"added": added, "skipped": skipped}
+
     def reembed(self) -> int:
         rows = self.store.all_for_reembed()
         if not rows:
@@ -281,6 +325,22 @@ class MemoryService:
         for row, vector in zip(rows, vectors):
             self.store.set_embedding(row["id"], vector)
         return len(rows)
+
+
+def _import_rows(payload: object) -> list:
+    if isinstance(payload, dict):
+        if payload.get("format", 1) != 1:
+            raise MemoryError("error.import_format", "Unbekanntes Importformat.")
+        rows = payload.get("memories")
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        raise MemoryError("error.import_format", "Die Datei enthält keine Erinnerungen.")
+    if not isinstance(rows, list):
+        raise MemoryError("error.import_format", "Die Datei enthält keine Erinnerungen.")
+    if len(rows) > 5000:
+        raise MemoryError("error.import_limit", "Höchstens 5000 Erinnerungen auf einmal.")
+    return rows
 
 
 def _atomic(text: str) -> bool:
@@ -304,7 +364,19 @@ def get_service() -> MemoryService:
     cfg = load_config()
     path = Path(cfg.path) if cfg.path else None
     mtime = path.stat().st_mtime_ns if path and path.exists() else 0
-    key = (str(path), mtime, str(db_path()), os.environ.get("MEMORYFORGE_EMBED", ""), cfg.embed.model, cfg.llm.enabled, cfg.llm.model)
+    key = (
+        str(path),
+        mtime,
+        str(db_path()),
+        os.environ.get("MEMORYFORGE_EMBED", ""),
+        cfg.embed.model,
+        cfg.llm.enabled,
+        cfg.llm.provider,
+        cfg.llm.base_url,
+        cfg.llm.model,
+        cfg.llm.thinking,
+        hash(cfg.llm.api_key),
+    )
     with _guard:
         if _service is None or key != _service_key:
             if _service is not None:

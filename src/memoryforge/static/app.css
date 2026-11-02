@@ -184,6 +184,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   max-width: 68ch;
 }
 .hint { font-size: 0.92rem; color: var(--faint); }
+.hint.is-error { color: var(--danger); }
 .banner {
   background: #242018;
   color: var(--ok);

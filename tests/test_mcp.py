@@ -6,13 +6,14 @@ from memoryforge.mcp_server import build_mcp
 from memoryforge.server import create_app
 
 
-def test_mcp_exposes_the_six_tools():
+def test_mcp_exposes_the_tools():
     mcp = build_mcp()
     tools = asyncio.run(mcp.list_tools())
     names = {tool.name for tool in tools}
     assert names == {
         "memory_search",
         "memory_add",
+        "memory_update",
         "memory_list",
         "memory_forget",
         "memory_pin",

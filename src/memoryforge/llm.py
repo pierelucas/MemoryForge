@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from memoryforge.config import Config, KINDS
+from memoryforge.providers import PROVIDERS, ProviderError, chat_completions_url, request_headers
 
 EXTRACT_SYSTEM = """You extract durable memories about a developer and their projects.
 Return JSON only, no markdown:
@@ -76,10 +77,13 @@ class ChatLLM:
 
     def complete(self, system: str, user: str, force_user: str | None = None) -> str:
         key = self.cfg.llm.api_key.strip()
-        if not key:
+        provider = PROVIDERS.get(self.cfg.llm.provider) or {}
+        if provider.get("requires_key", True) and not key:
             raise LLMError("Kein API-Key hinterlegt.")
-        base = self.cfg.llm.base_url.rstrip("/")
-        url = f"{base}/chat/completions"
+        try:
+            url = chat_completions_url(self.cfg.llm.base_url)
+        except ProviderError as exc:
+            raise LLMError(str(exc)) from exc
         body: dict[str, Any] = {
             "model": self.cfg.llm.model,
             "messages": [
@@ -89,7 +93,9 @@ class ChatLLM:
             "temperature": 0,
             "response_format": {"type": "json_object"},
         }
-        if not self.cfg.llm.thinking:
+        # Only DeepSeek understands this field. Sending it everywhere made
+        # the first call fail with 400, then retry without JSON mode too.
+        if provider.get("supports_thinking") and not self.cfg.llm.thinking:
             body["thinking"] = {"type": "disabled"}
         response = self._post(url, key, body)
         if response.status_code in {400, 422} and ("thinking" in body or "response_format" in body):
@@ -118,8 +124,10 @@ class ChatLLM:
             return httpx.post(
                 url,
                 json=body,
-                headers={"Authorization": f"Bearer {key}"},
+                headers=request_headers(self.cfg.llm.provider, key),
                 timeout=60,
+                # A redirect to another host would forward the bearer token.
+                follow_redirects=not bool(key),
             )
         except httpx.HTTPError as exc:
             raise LLMError(f"API nicht erreichbar: {exc.__class__.__name__}") from exc

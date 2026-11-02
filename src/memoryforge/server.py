@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from mcp.server.transport_security import TransportSecuritySettings
@@ -15,6 +15,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from memoryforge import __version__
 from memoryforge.config import PROVIDERS, known_model, load_config, model_catalog
+from memoryforge.providers import ProviderError, provider_or_custom, resolve_models
 from memoryforge.i18n import kind_label, normalize_lang, translate
 from memoryforge.scope import normalize_scope, scope_label, scope_path_label
 from memoryforge.service import get_service, seed_demo
@@ -298,7 +299,7 @@ def create_app() -> FastAPI:
                 cfg=cfg,
                 providers=PROVIDERS,
                 catalog=model_catalog(),
-                known=known_model(cfg.llm.model),
+                known=known_model(cfg.llm.model, cfg.llm.provider),
                 msg=msg,
                 err=err,
                 active="settings",
@@ -320,8 +321,9 @@ def create_app() -> FastAPI:
         cfg = load_config()
         cfg.ui.lang = normalize_lang(lang)
         cfg.llm.enabled = enabled == "1"
-        if provider not in PROVIDERS:
-            provider = "custom"
+        provider = provider_or_custom(provider)
+        old_default = (PROVIDERS.get(cfg.llm.provider) or {}).get("base_url") or ""
+        new_default = (PROVIDERS.get(provider) or {}).get("base_url") or ""
         cfg.llm.provider = provider
         custom = model_custom.strip()
         chosen = custom or model_choice.strip() or cfg.llm.model
@@ -329,8 +331,10 @@ def create_app() -> FastAPI:
             chosen = custom or cfg.llm.model
         cfg.llm.model = chosen
         url = base_url.strip()
-        if not url and provider in PROVIDERS and PROVIDERS[provider]["base_url"]:
-            url = PROVIDERS[provider]["base_url"]
+        # The form can still hold the previous provider's default when the
+        # browser has no script. A URL the user typed is left alone.
+        if not url or url == old_default:
+            url = new_default or url
         cfg.llm.base_url = url
         cfg.llm.thinking = thinking == "1"
         if clear_key == "1":
@@ -363,6 +367,36 @@ def create_app() -> FastAPI:
         join = "&" if "?" in target else "?"
         message = translate(lang, result["key"], **result.get("params", {})) if result.get("key") else result.get("message")
         return _redirect(f"{target}{join}{key}=" + quote(message or translate(lang, "flash.done")))
+
+    @app.post("/api/models")
+    def api_models(
+        provider: str = Form("deepseek"),
+        base_url: str = Form(""),
+        api_key: str = Form(""),
+    ):
+        cfg = load_config()
+        key_name = provider_or_custom(provider)
+        typed = api_key.strip()
+        # A key stored for another provider must not be sent to this one.
+        stored = cfg.llm.api_key if key_name == cfg.llm.provider else ""
+        url = base_url.strip() or (cfg.llm.base_url if key_name == cfg.llm.provider else "")
+        try:
+            models, source, error = resolve_models(key_name, url, typed or stored)
+        except ProviderError as exc:
+            return JSONResponse({"models": [], "error": str(exc)[:240]}, status_code=400)
+        return {"models": models, "source": source, "error": error}
+
+    @app.post("/export")
+    def export_now():
+        import json
+
+        payload = {"format": 1, "memories": get_service().export_rows(None)}
+        body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        return Response(
+            body,
+            media_type="application/json",
+            headers={"Content-Disposition": 'attachment; filename="memoryforge-memories.json"'},
+        )
 
     @app.post("/backup")
     def backup_now(secrets: str = Form("1")):

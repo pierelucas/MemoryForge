@@ -38,7 +38,7 @@ Träumen fasst nur zusammen oder legt still, was schon gespeichert ist. Es erfin
 - Python 3.10 oder neuer
 - [uv](https://docs.astral.sh/uv/)
 - Git, wenn Projekt-Scopes erkannt werden sollen
-- optional ein API-Key für DeepSeek oder eine andere OpenAI-kompatible API
+- optional ein API-Key für DeepSeek, OpenCode Go oder eine andere OpenAI-kompatible API
 
 Beim ersten echten Embedding lädt `fastembed` das Modell `BAAI/bge-small-en-v1.5` in den lokalen Cache. Ohne das Paket sucht MemoryForge weiter, mit einem Hash-Embedder plus Volltext. Gedacht für Tests und für Rechner, auf denen der Download nicht hin soll. Die Treffer sind schwächer.
 
@@ -97,22 +97,16 @@ An: ein kurzer Satz ohne nahen Nachbarn bleibt ebenfalls wörtlich. Längere Not
 
 Die Suche ruft die API nie.
 
-| Anzeige | Modell-ID | Anbieter |
-|---|---|---|
-| DeepSeek V4.1 Flash | `deepseek-flash` | `https://api.deepseek.com` |
-| DeepSeek V4 Pro | `deepseek-v4-pro` | dieselbe URL |
-| GPT-4.1 nano | `gpt-4.1-nano` | `https://api.openai.com/v1` |
-| GPT-4.1 mini | `gpt-4.1-mini` | dieselbe URL |
-| GPT-4o mini | `gpt-4o-mini` | dieselbe URL |
+Die Anbieterliste umfasst DeepSeek, OpenCode Go, OpenAI, OpenRouter, xAI, Groq, Mistral, Gemini, Cerebras, Together, Fireworks, Moonshot, DashScope, GitHub Models, Hugging Face, NVIDIA, Ollama, LM Studio und jede andere OpenAI-kompatible API.
 
-Die Anzeige ist nur eine Beschriftung. Der Anbieter muss die ID kennen. Eine andere ID oder ein lokaler OpenAI-kompatibler Server kommt in **Eigene Modell-ID**. Ist das Feld gefüllt, gewinnt es gegen die Liste. Die Wahl eines Listeneintrags leert das Feld.
+Die Wahl eines Anbieters setzt die API-Basis. Liegt schon ein Key, oder fügst du einen ein, lädt das Modellmenü die IDs dieses Anbieters. OpenCode Go und OpenRouter veröffentlichen ihre Kataloge, die laden auch ohne Key. Ollama und LM Studio brauchen keinen. Eine gefüllte eigene ID gewinnt. `memoryforge config set llm.provider openai` ersetzt eine Standard-Basis; eine selbst eingetragene URL bleibt.
 
 ```bash
 memoryforge config models
+memoryforge config models --live
 memoryforge config set llm.enabled true
-memoryforge config set llm.provider deepseek
-memoryforge config set llm.base_url https://api.deepseek.com
-memoryforge config set llm.model deepseek-flash
+memoryforge config set llm.provider opencode-go
+memoryforge config set llm.model glm-5.3-flash
 memoryforge config set llm.api_key sk-...
 memoryforge config set llm.thinking false
 memoryforge config set ui.lang de
@@ -142,6 +136,8 @@ memoryforge list --scope global
 memoryforge pin <id>
 memoryforge pin <id> --off
 memoryforge forget <id>
+memoryforge export -o erinnerungen.json
+memoryforge import erinnerungen.json
 memoryforge doctor
 ```
 
@@ -184,6 +180,7 @@ Die Werkzeuge tun nichts, wenn der Agent sie nicht aufruft. In die Projektanweis
 ```text
 At session start call memory_brief. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
 When you learn a durable preference, decision, convention, or debug lesson, call memory_add with one or a few sentences.
+When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
 Do not store secrets, tokens, or ephemeral task state.
 ```
 
@@ -192,6 +189,7 @@ Do not store secrets, tokens, or ephemeral task state.
 | `memory_brief` | Session-Start: Angeheftetes, dann die letzten Fakten |
 | `memory_search` | Bedeutung plus Volltext |
 | `memory_add` | Fakt oder Rohtext speichern |
+| `memory_update` | Text einer Zeile ersetzen oder sie verschieben |
 | `memory_list` | aktive Zeilen |
 | `memory_pin` | anheften oder lösen |
 | `memory_forget` | ausblenden |

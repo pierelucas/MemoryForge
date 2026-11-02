@@ -219,6 +219,14 @@ class Store:
             raise KeyError(memory_id)
         return found
 
+    def set_kind(self, memory_id: str, kind: str) -> None:
+        with self._lock:
+            self.conn.execute(
+                "UPDATE memories SET kind = ? WHERE uuid = ?",
+                (kind, memory_id),
+            )
+            self.conn.commit()
+
     def set_embedding(self, memory_id: str, embedding: list[float]) -> None:
         with self._lock:
             self.conn.execute(

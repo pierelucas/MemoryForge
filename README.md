@@ -38,7 +38,7 @@ Dreaming only merges or retires facts that are already stored. It does not inven
 - Python 3.10+
 - [uv](https://docs.astral.sh/uv/)
 - Git, if you want project scopes detected for you
-- optional: an API key for DeepSeek or another OpenAI-compatible API
+- optional: an API key for DeepSeek, OpenCode Go, or another OpenAI-compatible API
 
 The first real embedding downloads `BAAI/bge-small-en-v1.5` into the local cache. Without `fastembed`, search still works, using a hash embedder plus full text. That mode is for tests and for machines where the model download is not wanted. Recall is weaker.
 
@@ -97,22 +97,16 @@ On: one short sentence with no close neighbor is still stored as written. Longer
 
 Search does not call the API.
 
-| Label in the UI | Model id | Provider |
-|---|---|---|
-| DeepSeek V4.1 Flash | `deepseek-flash` | `https://api.deepseek.com` |
-| DeepSeek V4 Pro | `deepseek-v4-pro` | same |
-| GPT-4.1 nano | `gpt-4.1-nano` | `https://api.openai.com/v1` |
-| GPT-4.1 mini | `gpt-4.1-mini` | same |
-| GPT-4o mini | `gpt-4o-mini` | same |
+The provider list includes DeepSeek, OpenCode Go, OpenAI, OpenRouter, xAI, Groq, Mistral, Gemini, Cerebras, Together, Fireworks, Moonshot, DashScope, GitHub Models, Hugging Face, NVIDIA, Ollama, LM Studio, and any other OpenAI-compatible API.
 
-The label is just a label. The provider has to accept the id. Another id, or a local OpenAI-compatible server, goes in **Custom model ID**. A filled custom id wins over the list. Choosing a listed model clears the custom field.
+Choosing a provider fills the API base. If a key is already stored, or you paste one, the model menu loads that provider's ids. OpenCode Go and OpenRouter publish their catalogs, so those load without a key. Ollama and LM Studio need no key. A filled custom id still wins. `memoryforge config set llm.provider openai` also replaces a default base URL; a URL you typed yourself stays.
 
 ```bash
 memoryforge config models
+memoryforge config models --live
 memoryforge config set llm.enabled true
-memoryforge config set llm.provider deepseek
-memoryforge config set llm.base_url https://api.deepseek.com
-memoryforge config set llm.model deepseek-flash
+memoryforge config set llm.provider opencode-go
+memoryforge config set llm.model glm-5.3-flash
 memoryforge config set llm.api_key sk-...
 memoryforge config set llm.thinking false
 memoryforge config set ui.lang de
@@ -142,6 +136,8 @@ memoryforge list --scope global
 memoryforge pin <id>
 memoryforge pin <id> --off
 memoryforge forget <id>
+memoryforge export -o memories.json
+memoryforge import memories.json
 memoryforge doctor
 ```
 
@@ -184,6 +180,7 @@ The tools do nothing if the agent never calls them. Put this in the project inst
 ```text
 At session start call memory_brief. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
 When you learn a durable preference, decision, convention, or debug lesson, call memory_add with one or a few sentences.
+When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
 Do not store secrets, tokens, or ephemeral task state.
 ```
 
@@ -192,6 +189,7 @@ Do not store secrets, tokens, or ephemeral task state.
 | `memory_brief` | session start: pinned facts, then recent ones |
 | `memory_search` | meaning plus full text |
 | `memory_add` | store a fact or a raw note |
+| `memory_update` | replace the text of one row, or move it |
 | `memory_list` | active rows |
 | `memory_pin` | pin or unpin |
 | `memory_forget` | hide a row |

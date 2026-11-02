@@ -16,7 +16,8 @@ def build_mcp() -> MCPServer:
         instructions=(
             "Durable local memory. Call memory_brief at the start of a session. "
             "Call memory_add when you learn a preference, decision, convention, or debug lesson "
-            "that should survive this session. Do not store secrets or ephemeral task state. "
+            "that should survive this session. Call memory_update when a stored fact changed and you know its id. "
+            "Do not store secrets or ephemeral task state. "
             "Pass scope as 'global' or 'project:host/owner/repo'."
         ),
         version=__version__,
@@ -60,6 +61,17 @@ def build_mcp() -> MCPServer:
         resolved = normalize_scope(scope) if scope else ""
         rows = get_service().list_memories(resolved or None, limit=max(1, min(limit, 200)))
         return _dump({"memories": [_public(row) for row in rows]})
+
+    @mcp.tool(description="Replace the text of one memory. Pass scope only to move it.")
+    def memory_update(memory_id: str, text: str, scope: str | None = None) -> str:
+        """Update a stored fact. Omit scope to keep the current one."""
+        try:
+            row = get_service().update(memory_id.strip(), text, scope=scope or None)
+        except KeyError:
+            return _error(f"Unbekannte Id: {memory_id.strip()}")
+        except ValueError as exc:
+            return _error(str(exc))
+        return _dump(_public(row))
 
     @mcp.tool(description="Forget one memory by id.")
     def memory_forget(memory_id: str) -> str:

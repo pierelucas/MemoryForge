@@ -13,6 +13,8 @@ def test_doctor_and_model_list():
     assert models.exit_code == 0
     assert "deepseek-flash" in models.stdout
     assert "gpt-4.1-nano" in models.stdout
+    assert "opencode-go" in models.stdout
+    assert "glm-5.3-flash" in models.stdout
 
 
 def test_restore_refuses_while_the_service_still_runs(monkeypatch, tmp_path):
