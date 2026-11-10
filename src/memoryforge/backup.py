@@ -103,6 +103,18 @@ def restore_backup(archive_path: Path) -> dict:
             f"Embedding-Modell im Backup ist {manifest['embed_model']}, "
             f"lokal ist {cfg.embed.model}. Danach `memoryforge reembed` ausführen."
         )
+    try:
+        from memoryforge.db import Store
+        from memoryforge.vault import rebuild
+
+        store = Store(db_path())
+        try:
+            rebuild(store)
+        finally:
+            store.close()
+    except OSError as exc:
+        extra = f"Vault nicht geschrieben: {exc.__class__.__name__}."
+        warning = f"{warning} {extra}".strip()
     return {
         "memories_db": str(db_path()),
         "config": str(config_path()),

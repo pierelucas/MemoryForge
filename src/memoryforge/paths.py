@@ -30,6 +30,10 @@ def db_path() -> Path:
     return data_dir() / "memory.db"
 
 
+def vault_dir() -> Path:
+    return data_dir() / "vault"
+
+
 def pid_path() -> Path:
     return data_dir() / "memoryforge.pid"
 

@@ -8,6 +8,17 @@ The notebook UI is in English by default; German is a switch in **Settings**. [D
 
 Short facts that should still be true next week: a preference, a decision, a convention, a lesson from a bug. Not chat logs, not the current task, not secrets.
 
+The file layout follows OpenClaw and Claude Code:
+
+| Layer | File | Search |
+|---|---|---|
+| Profile | `USER.md` | evergreen preferences, written as directives |
+| Durable | `MEMORY.md` | evergreen facts, decisions, conventions, lessons |
+| Daily | `memory/YYYY-MM-DD.md` | working notes, 30-day half-life |
+| Review | `DREAMS.md` | dream diary, not searched, not injected |
+
+SQLite stays the source of truth. The Markdown vault is a projection under the data directory, rewritten when a memory changes. Editing a file does not change memory.
+
 Each fact has a scope.
 
 | Scope | Means |
@@ -31,7 +42,7 @@ The HTTP server cannot see your repo. Pass `scope` yourself. It binds to `127.0.
 
 No account, no hosted vector database. Search and embeddings stay local. Strings that look like secrets (`api_key=…`, `sk-…`, `ghp_…`, private keys) are redacted before they are stored. Do not put secrets in memory anyway.
 
-Dreaming only merges or retires facts that are already stored. It does not invent new ones. With the model switched off, dreaming changes nothing.
+Dreaming does not invent facts. With the model off, it changes nothing. With the model on, a sweep has three phases: light (stage near-duplicates), REM (a review sentence, marked as reflection), and deep (merge duplicates, promote a qualified daily note verbatim into `MEMORY.md` or `USER.md`). The diary lands in `DREAMS.md`.
 
 ## Requirements
 
@@ -62,6 +73,7 @@ The script installs `uv` if it is missing, then installs the `memoryforge` comma
 |---|---|
 | Config | `~/.config/memoryforge/config.toml` (mode `0600`) |
 | Database | `~/.local/share/memoryforge/memory.db` |
+| Vault | `~/.local/share/memoryforge/vault/` |
 | Service log | `~/.local/share/memoryforge/serve.log` |
 
 `XDG_CONFIG_HOME` and `XDG_DATA_HOME` replace those roots.
@@ -79,7 +91,7 @@ memoryforge doctor
 
 Default URL: <http://127.0.0.1:4737/>
 
-The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a scope page hides every active fact in it after a confirmation page. The rows stay in the file, and **All** is a view, not a scope, so it has no delete link.
+The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. Layer tabs split durable facts, daily notes, and the dream diary. **Files** shows the Markdown projection; editing it does not write back. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a scope page hides every active fact in it after a confirmation page. The rows stay in the file, and **All** is a view, not a scope, so it has no delete link.
 
 **Remember** stores one fact in the scope selected above the button. **Other scope** is for a scope that does not exist yet. A git URL in that field is normalized. `/` focuses search. Ctrl+Enter or Cmd+Enter submits the note you are typing.
 
@@ -120,11 +132,16 @@ The embedding model is not this menu. It stays `BAAI/bge-small-en-v1.5` on disk.
 ```bash
 memoryforge dream
 memoryforge dream --scope global
+memoryforge note "Heute den Port geprüft."
+memoryforge vault
 ```
+
+`note` writes a daily note and does not call the model. `vault` rewrites the Markdown projection. `memoryforge restore` rewrites it too, so an old vault cannot outlive the restored database.
 
 ## CLI
 
 ```bash
+memoryforge note "Heute den Port geprüft."
 memoryforge add "Bevorzuge pnpm statt npm."
 memoryforge add --scope global "Antworten dürfen Deutsch sein."
 memoryforge add --scope project:github.com/pierelucas/MemoryForge "Port der UI ist 4737."
@@ -180,6 +197,7 @@ The tools do nothing if the agent never calls them. Put this in the project inst
 ```text
 At session start call memory_brief. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
 When you learn a durable preference, decision, convention, or debug lesson, call memory_add with one or a few sentences.
+Call memory_note for a working note that should not enter MEMORY.md until dreaming promotes it.
 When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
 Do not store secrets, tokens, or ephemeral task state.
 ```
@@ -188,7 +206,8 @@ Do not store secrets, tokens, or ephemeral task state.
 |---|---|
 | `memory_brief` | session start: pinned facts, then recent ones |
 | `memory_search` | meaning plus full text |
-| `memory_add` | store a fact or a raw note |
+| `memory_add` | store a durable fact |
+| `memory_note` | store a daily note; dreaming may promote it later |
 | `memory_update` | replace the text of one row, or move it |
 | `memory_list` | active rows |
 | `memory_pin` | pin or unpin |

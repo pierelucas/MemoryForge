@@ -14,9 +14,11 @@ def build_mcp() -> MCPServer:
     mcp = MCPServer(
         "MemoryForge",
         instructions=(
-            "Durable local memory. Call memory_brief at the start of a session. "
-            "Call memory_add when you learn a preference, decision, convention, or debug lesson "
-            "that should survive this session. Call memory_update when a stored fact changed and you know its id. "
+            "Local memory with a readable Markdown vault: USER.md, MEMORY.md, daily notes, DREAMS.md. "
+            "Call memory_brief at session start. "
+            "Call memory_add for a durable fact, preference, decision, convention, or debug lesson. "
+            "Call memory_note for a working note that dreaming may promote later. "
+            "Call memory_update when a stored fact changed and you know its id. "
             "Do not store secrets or ephemeral task state. "
             "Pass scope as 'global' or 'project:host/owner/repo'."
         ),
@@ -30,7 +32,7 @@ def build_mcp() -> MCPServer:
         scope: 'global' or 'project:host/owner/repo'. Project searches also include global.
         """
         resolved = _scope_or_detect(scope)
-        rows = get_service().search(query, scope=resolved, limit=max(1, min(limit, 30)))
+        rows = get_service().search(query, scope=resolved, limit=max(1, min(limit, 30)), record=True)
         return _dump({"scope": resolved or "all", "memories": [_public(row) for row in rows]})
 
     @mcp.tool(description="Store a durable fact. Raw session text is distilled only if an LLM is enabled.")
@@ -51,6 +53,23 @@ def build_mcp() -> MCPServer:
                 "noop": result["noop"],
                 "llm": result["llm"],
                 "warning": result.get("warning"),
+                "memories": [_public(row) for row in result["memories"]],
+            }
+        )
+
+    @mcp.tool(description="Store a working note for today. It is not rewritten. Dreaming may promote it later.")
+    def memory_note(text: str, scope: str | None = None) -> str:
+        """Append a daily note. Do not put secrets or a raw transcript here."""
+        resolved = _scope_or_detect(scope)
+        try:
+            result = get_service().note(text, scope=resolved, source="mcp", detect=False)
+        except ValueError as exc:
+            return _error(str(exc))
+        return _dump(
+            {
+                "scope": resolved or "global",
+                "tier": "daily",
+                "noop": result["noop"],
                 "memories": [_public(row) for row in result["memories"]],
             }
         )
@@ -103,6 +122,10 @@ def build_mcp() -> MCPServer:
             {
                 "scope": card["scope"],
                 "memories": [_public(row) for row in card["memories"]],
+                "directives": [_public(row) for row in card.get("directives", [])],
+                "durable": [_public(row) for row in card.get("durable", [])],
+                "daily": [_public(row) for row in card.get("daily", [])],
+                "files": card.get("files") or {},
             }
         )
 
@@ -123,6 +146,7 @@ def _public(row: dict) -> dict:
         "scope": row["scope"],
         "text": row["text"],
         "kind": row["kind"],
+        "tier": row.get("tier") or "durable",
         "pinned": row["pinned"],
         "source": row.get("source"),
         "score": row.get("score"),

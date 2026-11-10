@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS memories (
     pinned INTEGER NOT NULL DEFAULT 0,
     forgotten INTEGER NOT NULL DEFAULT 0,
     superseded_by TEXT,
+    tier TEXT NOT NULL DEFAULT 'durable',
+    recalls INTEGER NOT NULL DEFAULT 0,
+    last_recalled_at TEXT,
+    importance INTEGER NOT NULL DEFAULT 5,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -52,6 +56,16 @@ CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
     INSERT INTO memories_fts(rowid, text, scope, kind)
     VALUES (new.id, new.text, new.scope, new.kind);
 END;
+
+CREATE TABLE IF NOT EXISTS dreams (
+    id INTEGER PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
+    scope TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dreams_scope ON dreams(scope, created_at);
 """
 
 
@@ -107,6 +121,7 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        self._migrate_columns()
         try:
             # SQLite creates the file with the process umask. Memory may
             # contain personal facts, so keep it private like the config.
@@ -129,16 +144,21 @@ class Store:
         embedding: list[float] | None,
         confidence: float = 1.0,
         pinned: bool = False,
+        tier: str = "durable",
+        importance: int | None = None,
     ) -> dict:
         now = utc_now()
         memory_id = uuid.uuid4().hex
+        stored_tier = tier if tier in {"daily", "durable"} else "durable"
+        stored_importance = importance if importance is not None else _importance_for(kind)
         with self._lock:
             cur = self.conn.execute(
                 """
                 INSERT INTO memories (
                     uuid, scope, text, embedding, kind, source, confidence,
-                    pinned, forgotten, superseded_by, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+                    pinned, forgotten, superseded_by, tier, recalls, last_recalled_at,
+                    importance, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, 0, NULL, ?, ?, ?)
                 """,
                 (
                     memory_id,
@@ -149,6 +169,8 @@ class Store:
                     source,
                     confidence,
                     1 if pinned else 0,
+                    stored_tier,
+                    max(1, min(10, int(stored_importance))),
                     now,
                     now,
                 ),
@@ -218,6 +240,39 @@ class Store:
         if found is None:
             raise KeyError(memory_id)
         return found
+
+    def set_tier(self, memory_id: str, tier: str) -> None:
+        if tier not in {"daily", "durable"}:
+            raise ValueError(tier)
+        if self.get(memory_id) is None:
+            raise KeyError(memory_id)
+        with self._lock:
+            self.conn.execute(
+                "UPDATE memories SET tier = ?, updated_at = ? WHERE uuid = ?",
+                (tier, utc_now(), memory_id),
+            )
+            self.conn.commit()
+
+    def note_recalls(self, ids: list[str]) -> None:
+        """Count an explicit search hit. Does not touch updated_at, so decay stays honest."""
+        if not ids:
+            return
+        now = utc_now()
+        with self._lock:
+            for start in range(0, len(ids), 500):
+                chunk = [memory_id for memory_id in ids[start : start + 500] if memory_id]
+                if not chunk:
+                    continue
+                marks = ",".join("?" for _ in chunk)
+                self.conn.execute(
+                    f"""
+                    UPDATE memories
+                    SET recalls = recalls + 1, last_recalled_at = ?
+                    WHERE uuid IN ({marks}) AND forgotten = 0 AND superseded_by IS NULL
+                    """,
+                    [now, *chunk],
+                )
+            self.conn.commit()
 
     def set_kind(self, memory_id: str, kind: str) -> None:
         with self._lock:
@@ -306,10 +361,18 @@ class Store:
         include_global: bool = False,
         limit: int = 50,
         pinned_only: bool = False,
+        tier: str | None = None,
+        kind: str | None = None,
     ) -> list[dict]:
         where, params = _active_scope(scope, include_global)
         if pinned_only:
             where += " AND pinned = 1"
+        if tier in {"daily", "durable"}:
+            where += " AND tier = ?"
+            params.append(tier)
+        if kind:
+            where += " AND kind = ?"
+            params.append(kind)
         params.append(clamp_limit(limit))
         with self._lock:
             rows = self.conn.execute(
@@ -345,6 +408,75 @@ class Store:
                 """
             ).fetchall()
         return [{"scope": row["scope"], "count": row["n"]} for row in rows]
+
+    def tier_counts(self, scope: str | None = None) -> dict[str, int]:
+        where, params = _active_scope(scope, include_global=False)
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT tier, COUNT(*) AS n FROM memories WHERE {where} GROUP BY tier",
+                params,
+            ).fetchall()
+        counts = {"durable": 0, "daily": 0}
+        for row in rows:
+            counts[str(row["tier"])] = int(row["n"])
+        return counts
+
+    def list_recent_daily(
+        self,
+        *,
+        scope: str | None,
+        include_global: bool,
+        since: str,
+        limit: int = 8,
+    ) -> list[dict]:
+        where, params = _active_scope(scope, include_global)
+        where += " AND tier = 'daily' AND created_at >= ?"
+        params.extend([since, clamp_limit(limit)])
+        with self._lock:
+            rows = self.conn.execute(
+                f"""
+                SELECT * FROM memories
+                WHERE {where}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [row_to_dict(row) for row in rows]
+
+    def insert_dream(self, scope: str, phase: str, summary: str) -> dict:
+        now = utc_now()
+        dream_id = uuid.uuid4().hex
+        with self._lock:
+            self.conn.execute(
+                """
+                INSERT INTO dreams (uuid, scope, phase, summary, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (dream_id, scope, phase, summary, now),
+            )
+            self.conn.commit()
+            row = self.conn.execute("SELECT * FROM dreams WHERE uuid = ?", (dream_id,)).fetchone()
+        return _dream_to_dict(row)
+
+    def list_dreams(self, scope: str | None = None, limit: int = 40) -> list[dict]:
+        params: list = []
+        where = "1 = 1"
+        if scope and scope not in {"", "all"}:
+            where = "scope = ?"
+            params.append(scope)
+        params.append(clamp_limit(limit, 200))
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT * FROM dreams WHERE {where} ORDER BY created_at DESC, id DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [_dream_to_dict(row) for row in rows]
+
+    def dream_scopes(self) -> list[str]:
+        with self._lock:
+            rows = self.conn.execute("SELECT DISTINCT scope FROM dreams ORDER BY scope").fetchall()
+        return [row["scope"] for row in rows]
 
     def count_active(self) -> int:
         with self._lock:
@@ -421,6 +553,23 @@ class Store:
                 by_id.update({row["uuid"]: row_to_dict(row) for row in rows})
         return [by_id[memory_id] for memory_id in ids if memory_id in by_id]
 
+    def _migrate_columns(self) -> None:
+        with self._lock:
+            cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(memories)")}
+            statements = []
+            if "tier" not in cols:
+                statements.append("ALTER TABLE memories ADD COLUMN tier TEXT NOT NULL DEFAULT 'durable'")
+            if "recalls" not in cols:
+                statements.append("ALTER TABLE memories ADD COLUMN recalls INTEGER NOT NULL DEFAULT 0")
+            if "last_recalled_at" not in cols:
+                statements.append("ALTER TABLE memories ADD COLUMN last_recalled_at TEXT")
+            if "importance" not in cols:
+                statements.append("ALTER TABLE memories ADD COLUMN importance INTEGER NOT NULL DEFAULT 5")
+            for sql in statements:
+                self.conn.execute(sql)
+            if statements:
+                self.conn.commit()
+
     def _migrate_scopes(self) -> None:
         """Rewrite scopes that were stored in an older, unnormalized form.
 
@@ -496,6 +645,24 @@ def row_to_dict(row: sqlite3.Row) -> dict:
         "pinned": bool(row["pinned"]),
         "forgotten": bool(row["forgotten"]),
         "superseded_by": row["superseded_by"],
+        "tier": row["tier"] if "tier" in row.keys() else "durable",
+        "recalls": int(row["recalls"]) if "recalls" in row.keys() and row["recalls"] is not None else 0,
+        "last_recalled_at": row["last_recalled_at"] if "last_recalled_at" in row.keys() else None,
+        "importance": int(row["importance"]) if "importance" in row.keys() and row["importance"] is not None else 5,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def _dream_to_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["uuid"],
+        "scope": row["scope"],
+        "phase": row["phase"],
+        "summary": row["summary"],
+        "created_at": row["created_at"],
+    }
+
+
+def _importance_for(kind: str) -> int:
+    return {"preference": 7, "decision": 7, "convention": 6, "debug": 6}.get(kind, 5)

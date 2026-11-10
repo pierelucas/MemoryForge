@@ -26,6 +26,15 @@ Rules:
 - Never invent facts that are not in the source.
 """
 
+REFLECT_SYSTEM = """You write a one-sentence dream-diary reflection for a human reviewer.
+Return JSON only: {"summary":"<one sentence>"}
+Rules:
+- Mention only themes that are supported by the notes.
+- Do not invent facts, names, decisions, or new memories.
+- Do not rewrite the notes.
+- If nothing stands out, say that nothing should change.
+"""
+
 DREAM_SYSTEM = """You consolidate a personal memory file.
 You receive JSON memories with id and text.
 Return JSON only:
@@ -53,6 +62,18 @@ class ChatLLM:
         }
         raw = self.complete(EXTRACT_SYSTEM, json.dumps(payload, ensure_ascii=False))
         return parse_actions(raw)
+
+    def reflect(self, scope: str, notes: list[str]) -> str:
+        payload = {"scope": scope or "all", "notes": [note for note in notes if note][:8]}
+        raw = self.complete(REFLECT_SYSTEM, json.dumps(payload, ensure_ascii=False))
+        try:
+            data = json.loads(_strip_fence(raw))
+        except json.JSONDecodeError as exc:
+            raise LLMError("Die API hat kein gültiges JSON geliefert.") from exc
+        summary = str(data.get("summary") or "").strip() if isinstance(data, dict) else ""
+        if not summary:
+            raise LLMError("Die API hat keine Reflexion geliefert.")
+        return summary[:500].rstrip()
 
     def dream(self, scope: str, memories: list[dict]) -> list[dict]:
         payload = {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from memoryforge.config import KINDS, Config, load_config
@@ -16,6 +17,7 @@ from memoryforge.scope import detect_scope, normalize_scope
 _guard = threading.Lock()
 _service: MemoryService | None = None
 _service_key: tuple | None = None
+DAILY_HALF_LIFE_DAYS = 30
 
 
 class MemoryError(ValueError):
@@ -60,12 +62,14 @@ class MemoryService:
         strong = [item for item in neighbors if item.get("score", 0) >= 0.86 and item["text"].strip().lower() != cleaned.lower()]
         if not use_llm or (_atomic(cleaned) and not strong):
             memory = self._insert(cleaned, resolved, "fact", source, confidence=1.0)
+            self._sync(resolved)
             return {"memories": [memory], "noop": False, "llm": False}
 
         try:
             actions = self.llm.extract(cleaned, resolved, neighbors[:5])
         except LLMError:
             memory = self._insert(cleaned, resolved, "fact", source, confidence=0.5)
+            self._sync(resolved)
             return {"memories": [memory], "noop": False, "llm": False, "warning": "Extraktion fehlgeschlagen, Text wörtlich gespeichert."}
         if not actions or all(action.get("op") == "noop" for action in actions):
             # The model explicitly said there is nothing new. Do not store a
@@ -83,6 +87,7 @@ class MemoryService:
             ]
             return {"memories": existing, "noop": True, "llm": True}
         memories = self.apply_actions(actions, scope=resolved, source=source, fallback=cleaned)
+        self._sync(resolved)
         return {"memories": memories, "noop": not memories, "llm": True}
 
     def apply_actions(self, actions: list[dict], *, scope: str, source: str, fallback: str | None = None) -> list[dict]:
@@ -122,7 +127,37 @@ class MemoryService:
                 stored.append(self._insert(fallback, scope, "fact", source, confidence=0.6))
         return stored
 
-    def _insert(self, text: str, scope: str, kind: str, source: str, confidence: float) -> dict:
+    def note(
+        self,
+        text: str,
+        *,
+        scope: str | None = None,
+        source: str = "cli",
+        detect: bool = False,
+    ) -> dict:
+        """Store a working note. Dreaming may promote it later. The text is not rewritten."""
+        cleaned = redact(text)
+        if not cleaned:
+            raise ValueError("Leerer Text.")
+        resolved = normalize_scope(scope) if scope else ""
+        if not resolved:
+            resolved = detect_scope() if detect else "global"
+        exact = self.store.find_exact(resolved, cleaned)
+        if exact:
+            return {"memories": [exact], "noop": True, "llm": False}
+        memory = self._insert(cleaned, resolved, "fact", source, confidence=0.7, tier="daily")
+        self._sync(resolved)
+        return {"memories": [memory], "noop": False, "llm": False}
+
+    def _insert(
+        self,
+        text: str,
+        scope: str,
+        kind: str,
+        source: str,
+        confidence: float,
+        tier: str = "durable",
+    ) -> dict:
         embedding = self.embedder.embed_many([text])[0]
         return self.store.insert(
             text=text,
@@ -131,9 +166,18 @@ class MemoryService:
             source=source,
             embedding=embedding,
             confidence=confidence,
+            tier=tier,
         )
 
-    def search(self, query: str, *, scope: str | None = None, limit: int = 8, include_global: bool | None = None) -> list[dict]:
+    def search(
+        self,
+        query: str,
+        *,
+        scope: str | None = None,
+        limit: int = 8,
+        include_global: bool | None = None,
+        record: bool = False,
+    ) -> list[dict]:
         limit = clamp_limit(limit, 200)
         resolved = normalize_scope(scope) if scope else ""
         if include_global is None:
@@ -163,13 +207,24 @@ class MemoryService:
                 continue
             # Boost before sorting. Adding it afterwards only changed the
             # displayed number, never the order.
+            score *= importance_weight(row.get("importance"))
+            score *= recency_weight(
+                row.get("tier") or "durable",
+                bool(row["pinned"]),
+                row.get("updated_at") or row.get("created_at"),
+            )
             if row["pinned"]:
                 score += 0.04
             shown = dict(row)
             shown["score"] = round(score, 4)
             results.append(shown)
         results.sort(key=lambda item: item["score"], reverse=True)
-        return results[:limit]
+        found = results[:limit]
+        if record and found:
+            self.store.note_recalls([row["id"] for row in found])
+            for row in found:
+                row["recalls"] = int(row.get("recalls") or 0) + 1
+        return found
 
     def brief(self, scope: str | None = None, *, detect: bool = False) -> dict:
         resolved = normalize_scope(scope) if scope else ""
@@ -177,26 +232,87 @@ class MemoryService:
             resolved = detect_scope()
         include_global = bool(resolved) and resolved != "global"
         pinned = self.store.list_memories(scope=resolved or None, include_global=include_global, limit=8, pinned_only=True)
-        recent = self.store.list_memories(scope=resolved or None, include_global=include_global, limit=12)
-        seen = {item["id"] for item in pinned}
-        memories = pinned + [item for item in recent if item["id"] not in seen]
-        return {"scope": resolved or "all", "memories": memories[:12]}
+        directives = self.store.list_memories(
+            scope=resolved or None,
+            include_global=include_global,
+            limit=6,
+            tier="durable",
+            kind="preference",
+        )
+        durable = self.store.list_memories(
+            scope=resolved or None,
+            include_global=include_global,
+            limit=8,
+            tier="durable",
+        )
+        since = (datetime.now(timezone.utc) - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        daily = self.store.list_recent_daily(
+            scope=resolved or None,
+            include_global=include_global,
+            since=since.isoformat(),
+            limit=6,
+        )
+        seen: set[str] = set()
+        memories: list[dict] = []
+        for bucket in (pinned, directives, durable, daily):
+            for item in bucket:
+                if item["id"] in seen:
+                    continue
+                seen.add(item["id"])
+                memories.append(item)
+                if len(memories) >= 12:
+                    break
+            if len(memories) >= 12:
+                break
+        if resolved:
+            self._sync(resolved)
+            if include_global:
+                self._sync("global")
+        else:
+            self._sync()
+        from memoryforge.vault import vault_dir, vault_files
 
-    def list_memories(self, scope: str | None = None, limit: int = 50) -> list[dict]:
+        files = vault_files(resolved) if resolved else {"index": str(vault_dir() / "INDEX.md")}
+        return {
+            "scope": resolved or "all",
+            "memories": memories[:12],
+            "directives": directives,
+            "durable": [item for item in durable if item.get("kind") != "preference"][:6],
+            "daily": daily,
+            "files": files,
+        }
+
+    def list_memories(self, scope: str | None = None, limit: int = 50, *, tier: str | None = None) -> list[dict]:
         resolved = normalize_scope(scope) if scope else ""
-        return self.store.list_memories(scope=resolved or None, include_global=False, limit=clamp_limit(limit))
+        return self.store.list_memories(
+            scope=resolved or None,
+            include_global=False,
+            limit=clamp_limit(limit),
+            tier=tier,
+        )
+
+    def list_dreams(self, scope: str | None = None, limit: int = 40) -> list[dict]:
+        resolved = normalize_scope(scope) if scope else ""
+        return self.store.list_dreams(resolved or None, limit=limit)
 
     def forget(self, memory_id: str) -> None:
+        current = self.store.get(memory_id)
         self.store.forget(memory_id)
+        if current:
+            self._sync(current["scope"])
 
     def forget_scope(self, scope: str) -> int:
         resolved = normalize_scope(scope)
         if not resolved:
             raise MemoryError("error.invalid_scope", "Ungültiger Scope.")
-        return self.store.forget_scope(resolved)
+        count = self.store.forget_scope(resolved)
+        self._sync(resolved)
+        return count
 
     def pin(self, memory_id: str, pinned: bool = True) -> dict:
-        return self.store.set_pinned(memory_id, pinned)
+        row = self.store.set_pinned(memory_id, pinned)
+        self._sync(row["scope"])
+        return row
 
     def update(self, memory_id: str, text: str, scope: str | None = None) -> dict:
         current = self.store.get(memory_id)
@@ -220,7 +336,9 @@ class MemoryService:
                 scope=target,
             )
         embedding = self.embedder.embed_many([cleaned])[0]
-        return self.store.update_text(memory_id, cleaned, embedding, scope=target)
+        updated = self.store.update_text(memory_id, cleaned, embedding, scope=target)
+        self._sync(current["scope"], updated["scope"])
+        return updated
 
     def dream(self, scope: str | None = None) -> dict:
         if not self.cfg.llm.enabled:
@@ -228,6 +346,7 @@ class MemoryService:
                 "ok": False,
                 "changed": 0,
                 "reviewed": 0,
+                "promoted": 0,
                 "key": "dream.off",
                 "message": "KI ist aus. Dreaming hat nichts geändert.",
             }
@@ -235,11 +354,13 @@ class MemoryService:
         # Dream over every active row. The old 80-row page silently skipped
         # older memories once a scope grew.
         rows = self.store.all_active(resolved or None)
-        if len(rows) < 2:
+        promotable = [row for row in rows if promotable_daily(row)]
+        if len(rows) < 2 and not promotable:
             return {
                 "ok": True,
                 "changed": 0,
                 "reviewed": len(rows),
+                "promoted": 0,
                 "key": "dream.too_few",
                 "message": "Zu wenige Erinnerungen zum Träumen.",
             }
@@ -248,27 +369,88 @@ class MemoryService:
             groups.setdefault(row["scope"], []).append(row)
         changed = 0
         reviewed = 0
+        promoted_total = 0
+        touched: set[str] = set()
         for scope_name, group in groups.items():
-            if len(group) < 2:
+            touched.add(scope_name)
+            local_reviewed = 0
+            merged = 0
+            ready = [row for row in group if promotable_daily(row)]
+            if len(group) < 2 and not ready:
                 reviewed += len(group)
                 continue
-            for start in range(0, len(group), 30):
-                batch = group[start : start + 30]
-                reviewed += len(batch)
+            if len(group) >= 2:
+                for start in range(0, len(group), 30):
+                    batch = group[start : start + 30]
+                    local_reviewed += len(batch)
+                    try:
+                        actions = self.llm.dream(scope_name, batch)
+                    except LLMError as exc:
+                        self._sync(*touched)
+                        return {"ok": False, "changed": changed, "reviewed": reviewed + local_reviewed, "message": str(exc)}
+                    made = self.apply_actions(actions, scope=scope_name, source="dream", fallback=None)
+                    merged += len(made)
+                    changed += len(made)
+            else:
+                local_reviewed = len(group)
+            reviewed += local_reviewed
+            pairs, scanned = self._near_pairs(scope_name) if len(group) >= 2 else (0, len(group))
+            candidates = ready
+            reflection = ""
+            reflect = getattr(self.llm, "reflect", None)
+            if callable(reflect) and (pairs or candidates):
                 try:
-                    actions = self.llm.dream(scope_name, batch)
-                except LLMError as exc:
-                    return {"ok": False, "changed": changed, "reviewed": reviewed, "message": str(exc)}
-                made = self.apply_actions(actions, scope=scope_name, source="dream", fallback=None)
-                changed += len(made)
+                    reflection = reflect(scope_name, [row["text"] for row in group[:8]])
+                except LLMError:
+                    reflection = ""
+            promoted = 0
+            for row in self.store.all_active(scope_name):
+                if not promotable_daily(row):
+                    continue
+                self.store.set_tier(row["id"], "durable")
+                promoted += 1
+            promoted_total += promoted
+            changed += promoted
+            summary = _dream_summary(
+                pairs=pairs,
+                scanned=scanned,
+                candidates=len(candidates),
+                reflection=reflection,
+                merged=merged,
+                promoted=promoted,
+                reviewed=local_reviewed,
+            )
+            self.store.insert_dream(scope_name, "sweep", summary)
+        self._sync(*touched)
         return {
             "ok": True,
             "changed": changed,
             "reviewed": reviewed,
+            "promoted": promoted_total,
             "key": "dream.done",
-            "params": {"changed": changed, "reviewed": reviewed},
-            "message": f"{changed} Erinnerungen angepasst, {reviewed} geprüft.",
+            "params": {"changed": changed, "reviewed": reviewed, "promoted": promoted_total},
+            "message": f"{changed} Erinnerungen angepasst, {promoted_total} befördert, {reviewed} geprüft.",
         }
+
+    def _near_pairs(self, scope: str, limit_rows: int = 200) -> tuple[int, int]:
+        vectors = self.store.vectors_for(scope, include_global=False)[:limit_rows]
+        scanned = len(vectors)
+        pairs = 0
+        for left in range(scanned):
+            for right in range(left + 1, scanned):
+                if cosine(vectors[left][1], vectors[right][1]) >= 0.86:
+                    pairs += 1
+                    if pairs >= 12:
+                        return pairs, scanned
+        return pairs, scanned
+
+    def _sync(self, *scopes: str) -> None:
+        try:
+            from memoryforge.vault import write_scopes
+
+            write_scopes(self.store, list(scopes) if scopes else None)
+        except OSError:
+            return
 
     def export_rows(self, scope: str | None = None) -> list[dict]:
         resolved = normalize_scope(scope) if scope else ""
@@ -279,6 +461,7 @@ class MemoryService:
                 "scope": row["scope"],
                 "kind": row["kind"] if row["kind"] in KINDS else "fact",
                 "pinned": bool(row["pinned"]),
+                "tier": row.get("tier") if row.get("tier") in {"daily", "durable"} else "durable",
             }
             for row in rows
         ]
@@ -310,8 +493,12 @@ class MemoryService:
                 if kind in KINDS and kind != row["kind"]:
                     self.store.set_kind(row["id"], kind)
                     row["kind"] = kind
+                if item.get("tier") == "daily":
+                    self.store.set_tier(row["id"], "daily")
                 if item.get("pinned"):
                     self.pin(row["id"], True)
+                else:
+                    self._sync(row["scope"])
                 added += 1
         finally:
             self.cfg.llm.enabled = previous
@@ -341,6 +528,86 @@ def _import_rows(payload: object) -> list:
     if len(rows) > 5000:
         raise MemoryError("error.import_limit", "Höchstens 5000 Erinnerungen auf einmal.")
     return rows
+
+
+def promotable_daily(row: dict, now: datetime | None = None) -> bool:
+    """A daily note may become durable only by copying its existing text."""
+    if (row.get("tier") or "durable") != "daily":
+        return False
+    if row.get("forgotten") or row.get("superseded_by"):
+        return False
+    if row.get("pinned"):
+        return True
+    text = (row.get("text") or "").strip()
+    if len(text) > 400 or text.count("\n") > 1:
+        return False
+    age = age_days(row.get("created_at"), now)
+    kind = row.get("kind") or "fact"
+    recalls = int(row.get("recalls") or 0)
+    if kind in {"preference", "decision", "convention"} and age >= 1:
+        return True
+    if kind == "debug" and recalls >= 2:
+        return True
+    if kind == "fact" and (recalls >= 2 or age >= 7):
+        return True
+    return False
+
+
+def recency_weight(tier: str, pinned: bool, when: str | None, now: datetime | None = None) -> float:
+    """Dated daily notes decay. Curated and pinned rows stay evergreen."""
+    if pinned or (tier or "durable") != "daily":
+        return 1.0
+    return 0.5 ** (age_days(when, now) / DAILY_HALF_LIFE_DAYS)
+
+
+def importance_weight(importance: int | None) -> float:
+    try:
+        value = int(5 if importance is None else importance)
+    except (TypeError, ValueError):
+        value = 5
+    value = max(1, min(10, value))
+    return 0.85 + 0.03 * value
+
+
+def age_days(value: str | None, now: datetime | None = None) -> float:
+    parsed = _parse_time(value)
+    if parsed is None:
+        return 0.0
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return max(0.0, (current - parsed).total_seconds() / 86400)
+
+
+def _parse_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _dream_summary(
+    *,
+    pairs: int,
+    scanned: int,
+    candidates: int,
+    reflection: str,
+    merged: int,
+    promoted: int,
+    reviewed: int,
+) -> str:
+    rem = f"Model reflection, not a stored fact: {reflection}" if reflection else "REM: no reflection."
+    return (
+        f"Light: {pairs} near-duplicate pairs in {scanned} rows, {candidates} daily notes ready to promote. "
+        f"{rem} "
+        f"Deep: {merged} merged, {promoted} promoted verbatim, {reviewed} reviewed. "
+        "No new facts were invented."
+    )
 
 
 def _atomic(text: str) -> bool:

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MemoryForge{% endblock %}</title>
   <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=3">
+  <link rel="stylesheet" href="/static/app.css?v=4">
 </head>
 <body>
   <div class="shell">
@@ -35,6 +35,7 @@
         {% endfor %}
       </nav>
       <div class="rail-foot">
+        <a class="scope {% if section == 'files' %}is-active{% endif %}" href="/files{% if active and active != 'settings' %}?scope={{ active | urlencode }}{% endif %}">{{ t('nav.files') }}</a>
         <a class="scope {% if active == 'settings' %}is-active{% endif %}" href="/settings">{{ t('nav.settings') }}</a>
       </div>
     </aside>

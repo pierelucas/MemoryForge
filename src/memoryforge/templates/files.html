@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ t('files.title') }}{% endblock %}
+{% block main %}
+<header class="mast">
+  <div class="mast-row">
+    <h1>{{ t('files.heading') }}</h1>
+  </div>
+  <p class="lede">{{ t('files.lede') }}</p>
+  <p class="hint"><code>{{ active }}</code> · {{ file_name }}</p>
+</header>
+
+<nav class="tabs" aria-label="{{ t('files.heading') }}">
+  {% for item in projection %}
+  <a class="{% if file_key == item.key %}is-active{% endif %}" href="/files?scope={{ active | urlencode }}&file={{ item.key | urlencode }}">{{ item.name }}</a>
+  {% endfor %}
+  <a href="/?scope={{ active | urlencode }}">{{ t('nav.all') }}</a>
+</nav>
+
+<article class="sheet file-view">
+  {% if file_empty %}
+  <p class="empty">{{ t('files.empty') }}</p>
+  {% else %}
+  <div class="prose">{{ file_html | safe }}</div>
+  {% endif %}
+</article>
+{% endblock %}

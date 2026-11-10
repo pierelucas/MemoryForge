@@ -171,45 +171,82 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request, q: str = "", scope: str = "", msg: str = "", err: str = ""):
+    def index(request: Request, q: str = "", scope: str = "", layer: str = "", msg: str = "", err: str = ""):
         service = get_service()
         # Normalize here as well: a git URL or trailing slash in the address
         # bar used to select nothing in the sidebar and fall back to global
         # in the composer.
         active = normalize_scope(scope)
+        chosen = layer if layer in {"durable", "daily", "dreams"} else ""
+        tier = chosen if chosen in {"durable", "daily"} else None
         also: list = []
-        if q.strip():
+        dreams: list = []
+        if chosen == "dreams":
+            rows = []
+            dreams = service.list_dreams(active or None, limit=40)
+        elif q.strip():
             rows = service.search(
                 q.strip(),
                 scope=active or None,
                 limit=40,
                 include_global=bool(active) and active != "global",
+                record=True,
             )
+            if tier:
+                rows = [row for row in rows if (row.get("tier") or "durable") == tier]
         elif active and active != "global":
-            rows = service.list_memories(active, limit=80)
-            also = service.list_memories("global", limit=40)
+            rows = service.list_memories(active, limit=80, tier=tier)
+            also = service.list_memories("global", limit=40, tier=tier)
         else:
-            rows = service.list_memories(active or None, limit=80)
+            rows = service.list_memories(active or None, limit=80, tier=tier)
+        counts = service.store.tier_counts(active or None)
+        if active and active != "global":
+            extra = service.store.tier_counts("global")
+            counts = {
+                "durable": counts.get("durable", 0) + extra.get("durable", 0),
+                "daily": counts.get("daily", 0) + extra.get("daily", 0),
+            }
         return templates.TemplateResponse(
             request,
             "index.html",
-            _page(request, rows=rows, also=also, q=q, active=active, msg=msg, err=err),
+            _page(
+                request,
+                rows=rows,
+                also=also,
+                dreams=dreams,
+                q=q,
+                active=active,
+                layer=chosen,
+                counts=counts,
+                dream_count=len(service.list_dreams(active or None, limit=200)),
+                msg=msg,
+                err=err,
+            ),
         )
 
     @app.post("/memories")
-    def create_memory(text: str = Form(...), scope: str = Form(""), scope_custom: str = Form("")):
+    def create_memory(
+        text: str = Form(...),
+        scope: str = Form(""),
+        scope_custom: str = Form(""),
+        tier: str = Form("durable"),
+    ):
         service = get_service()
         lang = load_config().ui.lang
         chosen = normalize_scope(scope_custom or scope or "global") or "global"
+        daily = tier == "daily"
         try:
-            result = service.add(text, scope=chosen, source="ui", detect=False)
+            if daily:
+                result = service.note(text, scope=chosen, source="ui", detect=False)
+            else:
+                result = service.add(text, scope=chosen, source="ui", detect=False)
         except ValueError as exc:
             return _redirect("/", err=_error(lang, exc))
         stored_scope = result["memories"][0]["scope"] if result["memories"] else chosen
         if result["noop"]:
             key = "flash.already_saved" if result["memories"] else "flash.nothing_new"
-            return _redirect(_home(stored_scope, translate(lang, key)))
-        return _redirect(_home(stored_scope, translate(lang, "flash.saved")))
+            return _redirect(_home(stored_scope, translate(lang, key), layer="daily" if daily else ""))
+        return _redirect(_home(stored_scope, translate(lang, "flash.saved"), layer="daily" if daily else ""))
 
     @app.post("/memories/{memory_id}")
     def edit_memory(
@@ -287,6 +324,33 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404)
         get_service().pin(memory_id, not row["pinned"])
         return _redirect(_home(scope or row["scope"]))
+
+    @app.get("/files", response_class=HTMLResponse)
+    def files(request: Request, scope: str = "", file: str = "memory"):
+        from memoryforge.vault import list_projection, read_projection, render_preview, write_scopes
+
+        service = get_service()
+        active = normalize_scope(scope) or "global"
+        try:
+            write_scopes(service.store, [active])
+            name, text = read_projection(active, file or "memory")
+            listing = list_projection(active)
+        except (OSError, ValueError):
+            name, text, listing = "MEMORY.md", "", []
+        return templates.TemplateResponse(
+            request,
+            "files.html",
+            _page(
+                request,
+                active=active,
+                file_key=file or "memory",
+                file_name=name,
+                file_html=render_preview(text),
+                file_empty=not text.strip(),
+                projection=listing,
+                section="files",
+            ),
+        )
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings(request: Request, msg: str = "", err: str = ""):
@@ -485,10 +549,12 @@ def _error(lang: str, exc: Exception) -> str:
     return str(exc)
 
 
-def _home(scope: str, msg: str = "") -> str:
+def _home(scope: str, msg: str = "", layer: str = "") -> str:
     params = []
     if scope and scope not in {"all", ""}:
         params.append("scope=" + quote(scope))
+    if layer in {"durable", "daily", "dreams"}:
+        params.append("layer=" + quote(layer))
     if msg:
         params.append("msg=" + quote(msg))
     if not params:

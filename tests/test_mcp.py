@@ -13,6 +13,7 @@ def test_mcp_exposes_the_tools():
     assert names == {
         "memory_search",
         "memory_add",
+        "memory_note",
         "memory_update",
         "memory_list",
         "memory_forget",

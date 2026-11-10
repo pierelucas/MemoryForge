@@ -10,6 +10,7 @@
       <span class="pill" title="{{ row.scope }}">{{ row.scope_label }}</span>
       {% endif %}
       {% if row.pinned %}<span class="pill is-accent">{{ t('index.pinned') }}</span>{% endif %}
+      <span class="pill {% if row.tier == 'daily' %}is-daily{% else %}is-durable{% endif %}">{{ t('index.tier_daily_label') if row.tier == 'daily' else t('index.tier_durable_label') }}</span>
       <time datetime="{{ row.updated_at }}">{{ row.when }}</time>
       {% if row.score is defined and q %}<span class="pill">{{ '%.2f'|format(row.score) }}</span>{% endif %}
     </div>
@@ -71,6 +72,19 @@
   {% endif %}
 </header>
 
+<div class="stats" aria-label="{{ t('index.layer_all') }}">
+  <span><strong>{{ counts.durable }}</strong> {{ t('index.stat_durable') }}</span>
+  <span><strong>{{ counts.daily }}</strong> {{ t('index.stat_daily') }}</span>
+  <span><strong>{{ dream_count }}</strong> {{ t('index.stat_dreams') }}</span>
+</div>
+
+<nav class="tabs" aria-label="{{ t('index.layer_all') }}">
+  <a class="{% if not layer %}is-active{% endif %}" href="/{% if active or q %}?{% endif %}{% if active %}scope={{ active | urlencode }}{% endif %}{% if active and q %}&{% endif %}{% if q %}q={{ q | urlencode }}{% endif %}">{{ t('index.layer_all') }}</a>
+  <a class="{% if layer == 'durable' %}is-active{% endif %}" href="/?{% if active %}scope={{ active | urlencode }}&{% endif %}layer=durable{% if q %}&q={{ q | urlencode }}{% endif %}">{{ t('index.layer_durable') }}</a>
+  <a class="{% if layer == 'daily' %}is-active{% endif %}" href="/?{% if active %}scope={{ active | urlencode }}&{% endif %}layer=daily{% if q %}&q={{ q | urlencode }}{% endif %}">{{ t('index.layer_daily') }}</a>
+  <a class="{% if layer == 'dreams' %}is-active{% endif %}" href="/?{% if active %}scope={{ active | urlencode }}&{% endif %}layer=dreams">{{ t('index.layer_dreams') }}</a>
+</nav>
+
 <form class="search" method="get" action="/">
   {% if active %}<input type="hidden" name="scope" value="{{ active }}">{% endif %}
   <label class="sr" for="q">{{ t('index.search') }}</label>
@@ -86,7 +100,12 @@
 
 <form class="composer" method="post" action="/memories">
   <label for="text">{{ t('index.new') }}</label>
+  <div class="segment" role="radiogroup" aria-label="{{ t('index.tier_hint') }}">
+    <label><input type="radio" name="tier" value="durable" checked><span>{{ t('index.tier_durable') }}</span></label>
+    <label><input type="radio" name="tier" value="daily"><span>{{ t('index.tier_daily') }}</span></label>
+  </div>
   <textarea id="text" name="text" rows="3" required placeholder="{{ t('index.composer_placeholder') }}"></textarea>
+  <p class="hint">{{ t('index.tier_hint') }}</p>
   <div class="composer-row">
     <label class="inline">
       {{ t('index.scope') }}
@@ -118,7 +137,18 @@
   </details>
 </form>
 
-{% if not rows and not also %}
+{% if layer == 'dreams' %}
+<section class="list" aria-label="{{ t('index.layer_dreams') }}">
+  {% for dream in dreams %}
+  <article class="card dream">
+    <p class="meta"><time datetime="{{ dream.created_at }}">{{ dream.created_at[:16].replace('T', ' ') }}</time> <span class="pill">{{ dream.scope }}</span></p>
+    <p class="body">{{ dream.summary }}</p>
+  </article>
+  {% else %}
+  <p class="empty">{{ t('index.dreams_empty') }}</p>
+  {% endfor %}
+</section>
+{% elif not rows and not also %}
 <p class="empty">{% if q %}{{ t('index.empty_search') }}{% elif active and active != 'global' %}{{ t('index.empty_project') }}{% else %}{{ t('index.empty_view') }}{% endif %}</p>
 {% elif not rows and active and active != 'global' and not q %}
 <p class="empty">{{ t('index.empty_project') }}</p>
@@ -130,11 +160,11 @@
 </section>
 {% endif %}
 
-{% if also %}
+{% if also and layer != 'dreams' %}
 <h2 class="section-title">{{ t('index.global_section') }} <span>{{ t('index.global_section_hint') }}</span></h2>
 <section class="list" aria-label="{{ t('index.global_section') }}">
   {% for row in also %}{{ card(row) }}{% endfor %}
 </section>
 {% endif %}
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 {% endblock %}

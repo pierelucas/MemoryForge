@@ -14,6 +14,7 @@ EN: dict[str, str] = {
     "nav.all": "All",
     "nav.global": "Global",
     "nav.settings": "Settings",
+    "nav.files": "Files",
     # Index
     "index.title": "Memories · MemoryForge",
     "index.pinned": "Pinned",
@@ -41,6 +42,19 @@ EN: dict[str, str] = {
     "index.global_section": "Global",
     "index.global_section_hint": "read here too",
     "index.delete_scope": "Delete scope",
+    "index.layer_all": "All layers",
+    "index.layer_durable": "Durable",
+    "index.layer_daily": "Daily",
+    "index.layer_dreams": "Dreams",
+    "index.tier_durable": "Durable fact",
+    "index.tier_daily": "Daily note",
+    "index.tier_hint": "Durable facts stay in MEMORY.md or USER.md. Daily notes decay and can be promoted verbatim when dreaming.",
+    "index.stat_durable": "durable",
+    "index.stat_daily": "daily",
+    "index.stat_dreams": "dreams",
+    "index.dreams_empty": "No sweep yet. Dreaming writes a review here and does not invent facts.",
+    "index.tier_daily_label": "Daily",
+    "index.tier_durable_label": "Durable",
     # Forget
     "forget.title": "Forget · MemoryForge",
     "forget.heading": "Forget?",
@@ -85,7 +99,7 @@ EN: dict[str, str] = {
     "settings.clear_key_hint": "Removes the stored key when you save.",
     "settings.save": "Save",
     "settings.check_dream": "Check and dream",
-    "settings.check_dream_hint": "The check makes one short call. Dreaming merges duplicates and marks the old rows as superseded. From here it runs over every scope, each one on its own.",
+    "settings.check_dream_hint": "The check makes one short call. Dreaming, with the model on, merges duplicates, promotes qualified daily notes verbatim, and writes a review to DREAMS.md. It does not invent facts. From here it runs over every scope, each one on its own.",
     "settings.test": "Test connection",
     "settings.dream": "Dream",
     "settings.move": "Move",
@@ -121,7 +135,12 @@ EN: dict[str, str] = {
     # Dream
     "dream.off": "AI is off. Dreaming changed nothing.",
     "dream.too_few": "Too few memories to dream about.",
-    "dream.done": "{changed} memories adjusted, {reviewed} reviewed.",
+    "dream.done": "{changed} memories adjusted, {promoted} promoted, {reviewed} reviewed.",
+    "files.title": "Files · MemoryForge",
+    "files.heading": "Files",
+    "files.lede": "A readable projection, same idea as USER.md, MEMORY.md, daily notes, and DREAMS.md. Editing a file does not change memory.",
+    "files.empty": "Nothing written for this file yet.",
+    "files.index": "All scopes",
 }
 
 DE: dict[str, str] = {
@@ -130,6 +149,7 @@ DE: dict[str, str] = {
     "nav.all": "Alle",
     "nav.global": "Global",
     "nav.settings": "Einstellungen",
+    "nav.files": "Dateien",
     # Index
     "index.title": "Erinnerungen · MemoryForge",
     "index.pinned": "Angeheftet",
@@ -157,6 +177,19 @@ DE: dict[str, str] = {
     "index.global_section": "Global",
     "index.global_section_hint": "wird hier mitgelesen",
     "index.delete_scope": "Scope löschen",
+    "index.layer_all": "Alle Schichten",
+    "index.layer_durable": "Dauerhaft",
+    "index.layer_daily": "Tage",
+    "index.layer_dreams": "Träume",
+    "index.tier_durable": "Dauerhafter Fakt",
+    "index.tier_daily": "Tagesnotiz",
+    "index.tier_hint": "Dauerhafte Fakten bleiben in MEMORY.md oder USER.md. Tagesnotizen verblassen und können beim Träumen wörtlich befördert werden.",
+    "index.stat_durable": "dauerhaft",
+    "index.stat_daily": "Tage",
+    "index.stat_dreams": "Träume",
+    "index.dreams_empty": "Noch kein Durchgang. Träumen schreibt hier eine Prüfung und erfindet keine Fakten.",
+    "index.tier_daily_label": "Tag",
+    "index.tier_durable_label": "Dauerhaft",
     # Forget
     "forget.title": "Vergessen · MemoryForge",
     "forget.heading": "Vergessen?",
@@ -201,7 +234,7 @@ DE: dict[str, str] = {
     "settings.clear_key_hint": "Entfernt den gespeicherten Schlüssel beim Speichern.",
     "settings.save": "Speichern",
     "settings.check_dream": "Prüfen und träumen",
-    "settings.check_dream_hint": "Die Prüfung macht einen kurzen Aufruf. Träumen fasst Dubletten zusammen und markiert die alten Zeilen als überholt. Von hier aus über alle Scopes, jeweils innerhalb eines Scopes.",
+    "settings.check_dream_hint": "Die Prüfung macht einen kurzen Aufruf. Träumen fasst bei eingeschalteter KI Dubletten zusammen, befördert geeignete Tagesnotizen wörtlich und schreibt eine Prüfung nach DREAMS.md. Es erfindet keine Fakten. Von hier aus über alle Scopes, jeweils innerhalb eines Scopes.",
     "settings.test": "Verbindung prüfen",
     "settings.dream": "Träumen",
     "settings.move": "Umzug",
@@ -237,7 +270,12 @@ DE: dict[str, str] = {
     # Dream
     "dream.off": "KI ist aus. Dreaming hat nichts geändert.",
     "dream.too_few": "Zu wenige Erinnerungen zum Träumen.",
-    "dream.done": "{changed} Erinnerungen angepasst, {reviewed} geprüft.",
+    "dream.done": "{changed} Erinnerungen angepasst, {promoted} befördert, {reviewed} geprüft.",
+    "files.title": "Dateien · MemoryForge",
+    "files.heading": "Dateien",
+    "files.lede": "Eine lesbare Projektion, dieselbe Idee wie USER.md, MEMORY.md, Tagesnotizen und DREAMS.md. Eine Datei zu bearbeiten ändert die Erinnerung nicht.",
+    "files.empty": "Für diese Datei steht noch nichts.",
+    "files.index": "Alle Scopes",
 }
 
 CATALOG = {"en": EN, "de": DE}

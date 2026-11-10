@@ -8,6 +8,17 @@ Die Oberfläche ist standardmäßig englisch, Deutsch lässt sich in den **Einst
 
 Kurze Fakten, die nächste Woche noch stimmen sollen: eine Vorliebe, eine Entscheidung, eine Konvention, eine Lehre aus einem Bug. Keine Chatverläufe, keine laufende Aufgabe, keine Secrets.
 
+Die Dateien folgen OpenClaw und Claude Code:
+
+| Schicht | Datei | Suche |
+|---|---|---|
+| Profil | `USER.md` | immergrüne Vorlieben, als Anweisung geschrieben |
+| Dauerhaft | `MEMORY.md` | immergrüne Fakten, Entscheidungen, Konventionen, Lehren |
+| Tag | `memory/YYYY-MM-DD.md` | Arbeitsnotizen, Halbwertszeit 30 Tage |
+| Prüfung | `DREAMS.md` | Traumtagebuch, wird nicht gesucht und nicht injiziert |
+
+SQLite bleibt die Quelle. Der Markdown-Ordner ist eine Projektion im Datenverzeichnis und wird bei jeder Änderung neu geschrieben. Eine Datei zu bearbeiten ändert die Erinnerung nicht.
+
 Jeder Fakt hat einen Scope.
 
 | Scope | Bedeutung |
@@ -31,7 +42,7 @@ Der HTTP-Dienst sieht dein Repo nicht. Den Scope musst du mitschicken. Er bindet
 
 Kein Konto, keine gehostete Vektordatenbank. Suche und Embeddings bleiben lokal. Zeichenketten, die wie Secrets aussehen (`api_key=…`, `sk-…`, `ghp_…`, private Keys), werden vor dem Speichern geschwärzt. Trotzdem keine Secrets hineingeben.
 
-Träumen fasst nur zusammen oder legt still, was schon gespeichert ist. Es erfindet nichts. Ist das Modell aus, ändert Träumen nichts.
+Träumen erfindet keine Fakten. Ist das Modell aus, ändert es nichts. Ist es an, läuft ein Durchgang in drei Phasen: Light (nahe Dubletten vormerken), REM (ein Prüfungssatz, als Reflexion markiert) und Deep (Dubletten zusammenfassen, eine geeignete Tagesnotiz wörtlich nach `MEMORY.md` oder `USER.md` befördern). Das Tagebuch landet in `DREAMS.md`.
 
 ## Voraussetzungen
 
@@ -62,6 +73,7 @@ Das Skript installiert `uv`, falls es fehlt, und danach das Kommando `memoryforg
 |---|---|
 | Konfiguration | `~/.config/memoryforge/config.toml` (Rechte `0600`) |
 | Datenbank | `~/.local/share/memoryforge/memory.db` |
+| Vault | `~/.local/share/memoryforge/vault/` |
 | Dienst-Log | `~/.local/share/memoryforge/serve.log` |
 
 `XDG_CONFIG_HOME` und `XDG_DATA_HOME` ersetzen diese Wurzeln.
@@ -79,7 +91,7 @@ memoryforge doctor
 
 Standardadresse: <http://127.0.0.1:4737/>
 
-In der Leiste stehen die Scopes. **Alle** zeigt alles. **Global** nur globale Fakten. Ein Repository zeigt dieses Repository und darunter die globalen Fakten, die ein Agent dort mitliest. Die Suche in einem Repository durchsucht beide. **Scope löschen** auf einer Scope-Seite blendet nach einer Bestätigungsseite alle aktiven Fakten darin aus. Die Zeilen bleiben in der Datei. **Alle** ist eine Ansicht, kein Scope, und hat deshalb keinen Lösch-Link.
+In der Leiste stehen die Scopes. **Alle** zeigt alles. **Global** nur globale Fakten. Die Schicht-Tabs trennen dauerhafte Fakten, Tagesnotizen und das Traumtagebuch. **Dateien** zeigt die Markdown-Projektion; sie zu bearbeiten schreibt nicht zurück. Ein Repository zeigt dieses Repository und darunter die globalen Fakten, die ein Agent dort mitliest. Die Suche in einem Repository durchsucht beide. **Scope löschen** auf einer Scope-Seite blendet nach einer Bestätigungsseite alle aktiven Fakten darin aus. Die Zeilen bleiben in der Datei. **Alle** ist eine Ansicht, kein Scope, und hat deshalb keinen Lösch-Link.
 
 **Merken** speichert einen Fakt im Scope über dem Knopf. **Anderer Scope** ist für einen Namen, den es noch nicht gibt. Eine Git-URL in dem Feld wird umgeschrieben. `/` setzt den Fokus in die Suche. Strg+Enter oder Cmd+Enter speichert die Notiz, in der du gerade tippst.
 
@@ -120,11 +132,16 @@ Das Embedding-Modell ist nicht dieses Menü. Es bleibt lokal `BAAI/bge-small-en-
 ```bash
 memoryforge dream
 memoryforge dream --scope global
+memoryforge note "Heute den Port geprüft."
+memoryforge vault
 ```
+
+`note` schreibt eine Tagesnotiz und ruft das Modell nicht. `vault` schreibt die Markdown-Projektion neu. `memoryforge restore` schreibt sie ebenfalls neu, damit ein altes Vault die wiederhergestellte Datenbank nicht überlebt.
 
 ## CLI
 
 ```bash
+memoryforge note "Heute den Port geprüft."
 memoryforge add "Bevorzuge pnpm statt npm."
 memoryforge add --scope global "Antworten dürfen Deutsch sein."
 memoryforge add --scope project:github.com/pierelucas/MemoryForge "Port der UI ist 4737."
@@ -180,6 +197,7 @@ Die Werkzeuge tun nichts, wenn der Agent sie nicht aufruft. In die Projektanweis
 ```text
 At session start call memory_brief. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
 When you learn a durable preference, decision, convention, or debug lesson, call memory_add with one or a few sentences.
+Call memory_note for a working note that should not enter MEMORY.md until dreaming promotes it.
 When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
 Do not store secrets, tokens, or ephemeral task state.
 ```
@@ -188,7 +206,8 @@ Do not store secrets, tokens, or ephemeral task state.
 |---|---|
 | `memory_brief` | Session-Start: Angeheftetes, dann die letzten Fakten |
 | `memory_search` | Bedeutung plus Volltext |
-| `memory_add` | Fakt oder Rohtext speichern |
+| `memory_add` | dauerhaften Fakt speichern |
+| `memory_note` | Tagesnotiz speichern; Träumen kann sie später befördern |
 | `memory_update` | Text einer Zeile ersetzen oder sie verschieben |
 | `memory_list` | aktive Zeilen |
 | `memory_pin` | anheften oder lösen |

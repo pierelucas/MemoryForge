@@ -14,31 +14,37 @@
 }
 
 :root {
-  --bg: #141414;
-  --rail: #1b1b1b;
-  --card: #222222;
-  --line: #333333;
-  --line-strong: #454545;
-  --text: #f7f7f7;
-  --muted: #c6c6c6;
-  --faint: #8f8f8f;
+  --bg: #0e0f12;
+  --bg-glow: rgba(255, 122, 26, 0.08);
+  --rail: rgba(18, 20, 25, 0.92);
+  --card: #171a21;
+  --line: #2a2e38;
+  --line-strong: #3c4352;
+  --text: #f4f6fb;
+  --muted: #c5cad6;
+  --faint: #8b93a7;
   --accent: #ff7a1a;
   --accent-ink: #1a1008;
-  --accent-dim: rgba(255, 122, 26, 0.16);
+  --accent-dim: rgba(255, 122, 26, 0.14);
+  --daily: #8eb6ff;
+  --daily-dim: rgba(142, 182, 255, 0.14);
   --danger: #ff8d7a;
-  --ok: #d5e3c8;
+  --ok: #d7e7cf;
   --sans: "Source Sans 3", "Segoe UI", sans-serif;
-  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  --radius: 14px;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(900px 420px at 100% -10%, var(--bg-glow), transparent 55%),
+    var(--bg);
   color: var(--text);
   font-family: var(--sans);
   font-size: 16px;
-  line-height: 1.45;
+  line-height: 1.5;
   min-height: 100vh;
 }
 button, input, textarea, select { font: inherit; color: inherit; }
@@ -243,7 +249,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .composer, .sheet, .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 14px;
   box-shadow: var(--shadow);
 }
@@ -416,6 +422,108 @@ details form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px;
   .search { flex-wrap: wrap; }
   .search input { padding-right: 12px; min-width: 0; width: 100%; }
 }
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.stats span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--faint);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.84rem;
+}
+.stats strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+}
+.tabs a {
+  text-decoration: none;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+}
+.tabs a:hover { color: var(--text); border-color: var(--line-strong); }
+.tabs a.is-active {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: transparent;
+  font-weight: 600;
+}
+.segment {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  width: max-content;
+  max-width: 100%;
+}
+.segment label { margin: 0; }
+.segment input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.segment span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.segment input:checked + span {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+.segment input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pill.is-daily {
+  color: var(--daily);
+  border-color: rgba(142, 182, 255, 0.4);
+  background: var(--daily-dim);
+}
+.pill.is-durable { color: var(--muted); }
+.file-view { margin-top: 0; }
+.prose h1, .prose h2 {
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+}
+.prose h1 { font-size: 1.35rem; }
+.prose h2 { font-size: 1rem; margin-top: 18px; }
+.prose p, .prose li { color: var(--muted); }
+.prose ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 8px; }
+.prose code, .hint code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.86em;
+}
+.dream .meta { margin-bottom: 8px; }
+.card { transition: border-color 0.15s ease; }
+.card:hover { border-color: var(--line-strong); }
+
 @media (prefers-reduced-motion: reduce) {
-  .switch-ui::after { transition: none; }
+  .switch-ui::after, .card { transition: none; }
 }

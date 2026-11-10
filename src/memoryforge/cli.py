@@ -153,7 +153,7 @@ def search(
         # Outside a repository this is a global search. Passing None used to
         # search every project as well, which contradicted the scope table.
         resolved = detect_scope()
-    rows = get_service().search(query, scope=resolved, limit=limit)
+    rows = get_service().search(query, scope=resolved, limit=limit, record=True)
     if not rows:
         typer.echo("Nichts gefunden.")
         return
@@ -204,12 +204,44 @@ def pin(
 
 
 @app.command()
+def note(
+    text: str = typer.Argument(..., help="Arbeitssnotiz. '-' liest stdin."),
+    scope: str | None = typer.Option(None, "--scope"),
+) -> None:
+    """Speichert eine Tagesnotiz. Dreaming kann sie später wörtlich befördern."""
+    if text == "-":
+        text = sys.stdin.read()
+    body = text
+    try:
+        result = get_service().note(body, scope=scope, source="cli", detect=scope is None)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    row = result["memories"][0] if result["memories"] else None
+    if result["noop"]:
+        typer.echo("War schon gespeichert.")
+    elif row:
+        typer.echo(f"{row['id']}  daily  {row['scope']}")
+    else:
+        typer.echo("Nichts gespeichert.")
+
+
+@app.command()
 def dream(scope: str | None = typer.Option(None, "--scope")) -> None:
-    """Fasst Duplikate zusammen, wenn eine KI konfiguriert und an ist."""
+    """Fasst Duplikate zusammen und befördert Tagesnotizen, wenn eine KI an ist."""
     result = get_service().dream(scope)
     typer.echo(result["message"])
     if not result["ok"]:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def vault() -> None:
+    """Schreibt die Markdown-Projektion neu und zeigt den Ordner."""
+    from memoryforge.vault import rebuild
+
+    path = rebuild(get_service().store)
+    typer.echo(f"Vault: {path}")
 
 
 @app.command()
@@ -263,6 +295,7 @@ def doctor() -> None:
     typer.echo(f"Version      {__version__}")
     typer.echo(f"Konfiguration {cfg.path}")
     typer.echo(f"Datenbank    {service.store.path}")
+    typer.echo(f"Vault        {service.store.path.parent / 'vault'}")
     typer.echo(f"Erinnerungen {service.store.count_active()}")
     typer.echo(f"Embeddings   {service.embedder.name}")
     typer.echo(f"KI           {'an' if cfg.llm.enabled else 'aus'}  {cfg.llm.provider}  {cfg.llm.model}")
@@ -311,6 +344,10 @@ def restore(archive: Path = typer.Argument(..., help="memoryforge-backup-....zip
         raise typer.Exit(code=1) from exc
     typer.echo(f"Wiederhergestellt: {info['config']}")
     typer.echo(f"Datenbank: {info['memories_db']}")
+    from memoryforge.vault import rebuild
+
+    reset()
+    typer.echo(f"Vault: {rebuild(get_service().store)}")
     if info.get("warning"):
         typer.echo(info["warning"])
     if had_service:
