@@ -230,6 +230,12 @@ def create_app() -> FastAPI:
                 counts=counts,
                 dream_count=len(service.list_dreams(active or None, limit=200)),
                 persona_line=persona_line,
+                leftovers=[]
+                if active
+                else [
+                    {"scope": name, "label": scope_label(name)}
+                    for name in service.residue_scopes()
+                ],
                 msg=msg,
                 err=err,
             ),
@@ -310,13 +316,21 @@ def create_app() -> FastAPI:
         resolved = normalize_scope(scope)
         if not resolved:
             raise HTTPException(status_code=404)
-        counts = {item["scope"]: item["count"] for item in get_service().store.scopes()}
-        if resolved not in counts:
+        service = get_service()
+        foot = service.scope_footprint(resolved)
+        if not (foot["memories"] or foot["dreams"] or foot["personas"] or foot["vault"]):
             raise HTTPException(status_code=404)
         return templates.TemplateResponse(
             request,
             "forget_scope.html",
-            _page(request, active=resolved, target_scope=resolved, count=counts[resolved]),
+            _page(
+                request,
+                active=resolved,
+                target_scope=resolved,
+                count=foot["memories"],
+                dreams=foot["dreams"],
+                personas=foot["personas"],
+            ),
         )
 
     @app.post("/scopes/forget")
@@ -324,6 +338,8 @@ def create_app() -> FastAPI:
         lang = load_config().ui.lang
         try:
             count = get_service().forget_scope(scope)
+        except KeyError:
+            raise HTTPException(status_code=404) from None
         except ValueError as exc:
             return _redirect("/", err=_error(lang, exc))
         return _redirect("/", msg=translate(lang, "flash.scope_forgotten", count=count))
@@ -580,8 +596,12 @@ def _page(request: Request, **extra) -> dict:
             for row in scopes
         ],
         "total": service.store.count_active(),
+        "can_delete": False,
     }
     context.update(extra)
+    active_scope = context.get("active") or ""
+    if active_scope and active_scope != "settings":
+        context["can_delete"] = service.has_scope_data(active_scope)
     if "rows" in context:
         context["rows"] = [_view(row, lang) for row in context["rows"]]
     if "also" in context:

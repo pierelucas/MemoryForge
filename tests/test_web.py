@@ -1,8 +1,19 @@
 from fastapi.testclient import TestClient
 
 from memoryforge.config import load_config
+from memoryforge.paths import data_dir
 from memoryforge.server import create_app
 from memoryforge.service import get_service
+
+
+def _stored_bytes() -> bytes:
+    root = data_dir()
+    blobs = []
+    if root.exists():
+        for path in root.rglob("*"):
+            if path.is_file() and not path.is_symlink():
+                blobs.append(path.read_bytes())
+    return b"".join(blobs)
 
 
 def test_pages_roundtrip():
@@ -134,6 +145,71 @@ def test_empty_project_page_has_one_hint_and_no_delete_link():
         assert "/scopes/forget" not in page.text
 
 
+def test_deleting_a_scope_erases_related_data_from_disk():
+    token = "PURGE-TOKEN-9f3c1a7e-scope-secret"
+    other = "Andere Scope bleibt stehen."
+    scope = "project:github.com/acme/purge"
+    kept = "project:github.com/acme/keep"
+    app = create_app()
+    with TestClient(app) as client:
+        client.post("/memories", data={"text": f"Aktiv {token}.", "scope": scope})
+        client.post("/memories", data={"text": f"Vergessen {token}.", "scope": scope})
+        client.post("/memories", data={"text": f"Ersetzt {token}.", "scope": scope})
+        client.post("/memories", data={"text": other, "scope": kept})
+        service = get_service()
+        forgotten = service.store.find_exact(scope, f"Vergessen {token}.")
+        service.forget(forgotten["id"])
+        old = service.store.find_exact(scope, f"Ersetzt {token}.")
+        current = service.store.find_exact(scope, f"Aktiv {token}.")
+        service.store.supersede([old["id"]], current["id"], scope=scope)
+        service.store.insert_dream(scope, "sweep", f"Traum {token}.")
+        service.set_persona(scope, "soul", f"Stimme {token}.")
+        service._sync(scope, kept)
+
+        from memoryforge.vault import scope_dir
+
+        assert token.encode() in (scope_dir(scope) / "SOUL.md").read_bytes()
+        confirm = client.get(f"/scopes/forget?scope={scope}")
+        assert confirm.status_code == 200
+        assert "3 memories" in confirm.text
+        assert "1 dreams" in confirm.text
+        assert "1 persona" in confirm.text
+
+        deleted = client.post("/scopes/forget", data={"scope": scope}, follow_redirects=False)
+        assert deleted.status_code == 303
+        assert service.store.scope_counts(scope) == {"memories": 0, "dreams": 0, "personas": 0}
+        assert service.store.get(forgotten["id"]) is None
+        assert service.store.find_exact(kept, other)
+        assert not scope_dir(scope).exists()
+        kept_memory = (scope_dir(kept) / "MEMORY.md").read_text(encoding="utf-8")
+        assert other in kept_memory
+        assert token not in kept_memory
+        assert token.encode() not in _stored_bytes()
+        assert all(token not in row["text"] for row in service.search(token, limit=10))
+        gone = client.post("/scopes/forget", data={"scope": scope}, follow_redirects=False)
+        assert gone.status_code == 404
+
+
+def test_hidden_scope_can_still_be_deleted_from_disk():
+    scope = "project:github.com/acme/old"
+    app = create_app()
+    with TestClient(app) as client:
+        client.post("/memories", data={"text": "Nur noch vergessen.", "scope": scope})
+        row = get_service().store.find_exact(scope, "Nur noch vergessen.")
+        get_service().forget(row["id"])
+
+        home = client.get("/")
+        assert scope in home.text
+        assert "/scopes/forget?scope=project%3Agithub.com/acme/old" in home.text
+
+        confirm = client.get(f"/scopes/forget?scope={scope}")
+        assert confirm.status_code == 200
+        deleted = client.post("/scopes/forget", data={"scope": scope}, follow_redirects=False)
+        assert deleted.status_code == 303
+        assert get_service().store.scope_counts(scope)["memories"] == 0
+        assert scope not in client.get("/").text
+
+
 def test_forgetting_a_whole_scope():
     app = create_app()
     with TestClient(app) as client:
@@ -144,6 +220,8 @@ def test_forgetting_a_whole_scope():
         confirm = client.get("/scopes/forget?scope=project:github.com/acme/a")
         assert confirm.status_code == 200
         assert "Delete scope?" in confirm.text
+        assert "cannot be undone" in confirm.text
+        assert "stay in the database" not in confirm.text
 
         deleted = client.post("/scopes/forget", data={"scope": "project:github.com/acme/a"}, follow_redirects=False)
         assert deleted.status_code == 303
@@ -151,6 +229,11 @@ def test_forgetting_a_whole_scope():
         assert "Projekt A." not in client.get("/").text
         assert "Projekt B." in client.get("/").text
         assert "Global bleibt." in client.get("/").text
+        assert get_service().store.scope_counts("project:github.com/acme/a") == {
+            "memories": 0,
+            "dreams": 0,
+            "personas": 0,
+        }
         assert "project:github.com/acme/a" not in [row["scope"] for row in get_service().store.scopes()]
 
         missing = client.get("/scopes/forget?scope=project:github.com/acme/nope")
@@ -168,3 +251,4 @@ def test_global_scope_can_be_deleted_but_not_the_all_view():
 
         client.post("/scopes/forget", data={"scope": "global"}, follow_redirects=False)
         assert "Ein globaler Fakt." not in client.get("/").text
+        assert get_service().store.scope_counts("global")["memories"] == 0

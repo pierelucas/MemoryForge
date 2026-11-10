@@ -3,14 +3,16 @@
 {% block main %}
 <header class="mast">
   <div class="mast-row"><h1>{{ t('scope_forget.heading') }}</h1></div>
-  <p class="lede">{{ t('scope_forget.lede', count=count) }}</p>
+  <p class="lede">{{ t('scope_forget.lede') }}</p>
 </header>
 <article class="card">
   <p class="body">{{ target_scope }}</p>
   <div class="meta">
-    <span class="pill">{{ target_scope | replace('project:', '') }}</span>
-    <span class="pill">{{ count }}</span>
+    <span class="pill">{{ t('scope_forget.memories', count=count) }}</span>
+    <span class="pill">{{ t('scope_forget.dreams', count=dreams) }}</span>
+    <span class="pill">{{ t('scope_forget.persona', count=personas) }}</span>
   </div>
+  <p class="hint">{{ t('scope_forget.disk') }}</p>
 </article>
 <form method="post" action="/scopes/forget" class="composer-row confirm-row">
   <input type="hidden" name="scope" value="{{ target_scope }}">

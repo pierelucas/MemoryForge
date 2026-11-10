@@ -7,6 +7,9 @@
   </div>
   <p class="lede">{{ t('persona.lede') }}</p>
   <p class="hint"><code>{{ active }}</code></p>
+  {% if can_delete %}
+  <p class="hint"><a class="text-link" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a></p>
+  {% endif %}
 </header>
 
 <div class="persona-grid">

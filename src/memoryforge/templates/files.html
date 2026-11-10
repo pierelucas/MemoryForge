@@ -7,6 +7,9 @@
   </div>
   <p class="lede">{{ t('files.lede') }}</p>
   <p class="hint"><code>{{ active }}</code> · {{ file_name }}</p>
+  {% if can_delete %}
+  <p class="hint"><a class="text-link" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a></p>
+  {% endif %}
 </header>
 
 <nav class="tabs" aria-label="{{ t('files.heading') }}">

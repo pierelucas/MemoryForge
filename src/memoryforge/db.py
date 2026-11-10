@@ -324,19 +324,93 @@ class Store:
             )
             self.conn.commit()
 
-    def forget_scope(self, scope: str) -> int:
-        """Hide every active row in a scope. Returns how many rows changed."""
+    def scope_counts(self, scope: str) -> dict[str, int]:
+        """Every stored row for a scope, including forgotten and replaced memories."""
         with self._lock:
-            cur = self.conn.execute(
+            memories = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM memories WHERE scope = ?",
+                (scope,),
+            ).fetchone()
+            dreams = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM dreams WHERE scope = ?",
+                (scope,),
+            ).fetchone()
+            personas = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM personas WHERE scope = ?",
+                (scope,),
+            ).fetchone()
+        return {
+            "memories": int(memories["n"]) if memories else 0,
+            "dreams": int(dreams["n"]) if dreams else 0,
+            "personas": int(personas["n"]) if personas else 0,
+        }
+
+    def residue_scopes(self) -> list[str]:
+        """Scopes that still have rows, but no active memory, so the sidebar hides them."""
+        with self._lock:
+            rows = self.conn.execute(
                 """
-                UPDATE memories
-                SET forgotten = 1, pinned = 0, updated_at = ?
-                WHERE scope = ? AND forgotten = 0 AND superseded_by IS NULL
-                """,
-                (utc_now(), scope),
-            )
-            self.conn.commit()
-            return cur.rowcount
+                SELECT scope FROM (
+                    SELECT scope FROM memories
+                    UNION
+                    SELECT scope FROM dreams
+                    UNION
+                    SELECT scope FROM personas
+                )
+                WHERE scope NOT IN (
+                    SELECT scope FROM memories
+                    WHERE forgotten = 0 AND superseded_by IS NULL
+                )
+                ORDER BY scope
+                """
+            ).fetchall()
+        return [row["scope"] for row in rows]
+
+    def purge_scope(self, scope: str) -> dict[str, int]:
+        """Delete every row for a scope. Returns how many rows were removed.
+
+        secure_delete overwrites the pages. A checkpoint writes those zeros
+        back over the old database pages, then VACUUM rewrites the file so the
+        deleted text is not left in free pages or the WAL.
+        """
+        with self._lock:
+            previous = self.conn.execute("PRAGMA secure_delete").fetchone()
+            secure = int(previous[0]) if previous else 0
+            self.conn.execute("PRAGMA secure_delete = ON")
+            try:
+                memories = self.conn.execute(
+                    "DELETE FROM memories WHERE scope = ?",
+                    (scope,),
+                ).rowcount
+                dreams = self.conn.execute(
+                    "DELETE FROM dreams WHERE scope = ?",
+                    (scope,),
+                ).rowcount
+                personas = self.conn.execute(
+                    "DELETE FROM personas WHERE scope = ?",
+                    (scope,),
+                ).rowcount
+                self.conn.commit()
+                # Always rewrite. A retry after a failed VACUUM may delete
+                # zero rows and would otherwise leave the old pages on disk.
+                # FULL copies the zeroed pages onto the main file before
+                # VACUUM unlinks it. TRUNCATE then drops the WAL tail.
+                self.conn.execute("PRAGMA wal_checkpoint(FULL)")
+                self.conn.commit()
+                self.conn.execute("VACUUM")
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                if secure == 1:
+                    self.conn.execute("PRAGMA secure_delete = ON")
+                elif secure == 2:
+                    self.conn.execute("PRAGMA secure_delete = FAST")
+                else:
+                    self.conn.execute("PRAGMA secure_delete = OFF")
+        return {
+            "memories": int(memories),
+            "dreams": int(dreams),
+            "personas": int(personas),
+        }
 
     def supersede(self, old_ids: list[str], new_id: str, *, scope: str | None = None) -> int:
         """Mark old rows as replaced. Returns how many rows actually changed.

@@ -93,7 +93,7 @@ memoryforge doctor
 
 Default URL: <http://127.0.0.1:4737/>
 
-The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. **Persona** is the voice for that scope. Layer tabs split durable facts, daily notes, and the dream diary. **Files** shows the Markdown projection; editing it does not write back. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a scope page hides every active fact in it after a confirmation page. The rows stay in the file, and **All** is a view, not a scope, so it has no delete link.
+The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. **Persona** is the voice for that scope. Layer tabs split durable facts, daily notes, and the dream diary. **Files** shows the Markdown projection; editing it does not write back. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a scope page removes that scope after a confirmation page: memories, dreams, persona, and the vault files are deleted from the database and from disk. **All** is a view, not a scope, so it has no delete link. An existing backup archive is not rewritten.
 
 **Remember** stores one fact in the scope selected above the button. **Other scope** is for a scope that does not exist yet. A git URL in that field is normalized. `/` focuses search. Ctrl+Enter or Cmd+Enter submits the note you are typing.
 
@@ -198,12 +198,15 @@ Older configs, without `servers`:
 The tools do nothing if the agent never calls them. Put this in the project instructions:
 
 ```text
-At session start call memory_brief and read card first. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
-Call memory_persona_set when the user states a name, vibe, or voice. Global applies everywhere. Project wins on conflict.
-When you learn a durable preference, decision, convention, or debug lesson, call memory_add with one or a few sentences.
-Call memory_note for a working note that should not enter MEMORY.md until dreaming promotes it.
+At session start call memory_brief. Read card first. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
+Global persona applies in every repo. Project persona wins if they conflict.
+Call memory_persona_set when the user states a name, vibe, or voice. slot is identity or soul.
+Call memory_add for a durable preference, decision, convention, or debug lesson, one or a few sentences. Preferences land in USER.md. Other durable facts land in MEMORY.md.
+Call memory_note for a working note that should stay in memory/YYYY-MM-DD.md until dreaming promotes it.
 When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
 Do not store secrets, tokens, or ephemeral task state.
+Do not edit the vault files. They are a projection. SQLite is the source of truth. DREAMS.md is review only.
+Deleting a scope in the notebook removes that scope from the database and from disk, including forgotten rows, dreams, persona, and vault files. Forgetting one memory still only hides that row. An existing backup is not rewritten.
 ```
 
 | Tool | Use |

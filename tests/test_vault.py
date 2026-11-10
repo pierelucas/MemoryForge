@@ -53,6 +53,38 @@ def test_secret_does_not_land_in_the_vault():
     assert "[redacted]" in text
 
 
+def test_remove_scope_does_not_follow_symlinks(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEMORYFORGE_DATA_DIR", str(tmp_path / "data"))
+    from memoryforge.service import reset
+
+    reset()
+    from memoryforge.db import Store
+    from memoryforge.paths import db_path
+    from memoryforge.vault import remove_scope, scope_dir, write_scope
+
+    store = Store(db_path())
+    try:
+        store.insert(text="Bleibt.", scope="project:github.com/acme/keep", kind="fact", source="test", embedding=None)
+        write_scope(store, "project:github.com/acme/keep")
+        keep = scope_dir("project:github.com/acme/keep")
+        outside = tmp_path / "outside.txt"
+        outside.write_text("SECRET-OUTSIDE", encoding="utf-8")
+        (keep / "leak").symlink_to(outside)
+        link = keep.parent / "link"
+        link.symlink_to(keep, target_is_directory=True)
+
+        remove_scope("project:github.com/acme/link")
+        assert not link.exists() and not link.is_symlink()
+        assert (keep / "MEMORY.md").is_file()
+        assert outside.read_text(encoding="utf-8") == "SECRET-OUTSIDE"
+
+        remove_scope("project:github.com/acme/keep")
+        assert not keep.exists()
+        assert outside.read_text(encoding="utf-8") == "SECRET-OUTSIDE"
+    finally:
+        store.close()
+
+
 def test_scope_path_cannot_escape_the_vault(tmp_path, monkeypatch):
     monkeypatch.setenv("MEMORYFORGE_DATA_DIR", str(tmp_path / "data"))
     escaped = scope_dir("project:../../etc")

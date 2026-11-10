@@ -67,7 +67,7 @@
   {% else %}
   <p class="lede">{{ t('index.lede_all') }}</p>
   {% endif %}
-  {% if active and scopes | selectattr('scope', 'equalto', active) | list %}
+  {% if can_delete %}
   <p class="hint"><a class="text-link" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a></p>
   {% endif %}
   {% if active %}
@@ -76,6 +76,16 @@
   </p>
   {% endif %}
 </header>
+
+{% if leftovers %}
+<section class="list" aria-label="{{ t('index.leftover_scopes') }}">
+  <h2 class="section-title">{{ t('index.leftover_scopes') }}</h2>
+  <p class="hint">{{ t('index.leftover_hint') }}</p>
+  {% for item in leftovers %}
+  <p class="hint"><a class="text-link" href="/scopes/forget?scope={{ item.scope | urlencode }}">{{ t('index.delete_scope') }}</a> <code>{{ item.scope }}</code></p>
+  {% endfor %}
+</section>
+{% endif %}
 
 <div class="stats" aria-label="{{ t('index.layer_all') }}">
   <span><strong>{{ counts.durable }}</strong> {{ t('index.stat_durable') }}</span>

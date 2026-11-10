@@ -346,13 +346,38 @@ class MemoryService:
         if current:
             self._sync(current["scope"])
 
+    def scope_footprint(self, scope: str) -> dict:
+        resolved = normalize_scope(scope) if scope else ""
+        empty = {"memories": 0, "dreams": 0, "personas": 0, "vault": False}
+        if not resolved:
+            return empty
+        counts = self.store.scope_counts(resolved)
+        try:
+            from memoryforge.vault import scope_dir
+
+            path = scope_dir(resolved)
+            counts["vault"] = path.exists() or path.is_symlink()
+        except OSError:
+            counts["vault"] = False
+        return counts
+
+    def has_scope_data(self, scope: str) -> bool:
+        foot = self.scope_footprint(scope)
+        return bool(foot["memories"] or foot["dreams"] or foot["personas"] or foot["vault"])
+
+    def residue_scopes(self) -> list[str]:
+        return self.store.residue_scopes()
+
     def forget_scope(self, scope: str) -> int:
+        """Remove a scope and everything that belongs to it, on disk as well as in the UI."""
         resolved = normalize_scope(scope)
         if not resolved:
             raise MemoryError("error.invalid_scope", "Ungültiger Scope.")
-        count = self.store.forget_scope(resolved)
-        self._sync(resolved)
-        return count
+        if not self.has_scope_data(resolved):
+            raise KeyError(resolved)
+        counts = self.store.purge_scope(resolved)
+        self._drop_projection(resolved)
+        return counts["memories"]
 
     def pin(self, memory_id: str, pinned: bool = True) -> dict:
         row = self.store.set_pinned(memory_id, pinned)
@@ -496,6 +521,18 @@ class MemoryService:
             write_scopes(self.store, list(scopes) if scopes else None)
         except OSError:
             return
+
+    def _drop_projection(self, scope: str) -> None:
+        """Remove the vault directory, then rewrite the index from what remains."""
+        from memoryforge.vault import remove_scope, write_index
+
+        try:
+            remove_scope(scope)
+        finally:
+            try:
+                write_index(self.store)
+            except OSError:
+                pass
 
     def export_rows(self, scope: str | None = None) -> list[dict]:
         resolved = normalize_scope(scope) if scope else ""

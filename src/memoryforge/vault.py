@@ -92,6 +92,36 @@ def write_scope(store: Store, scope: str) -> None:
             pass
 
 
+def remove_scope(scope: str) -> None:
+    """Delete one scope directory. A symlink is unlinked, never followed."""
+    if not scope:
+        return
+    root = _vault_root()
+    parts = _scope_parts(scope)
+    parent = root
+    for part in parts[:-1]:
+        parent = parent / part
+        if parent.is_symlink():
+            raise OSError("Refusing to delete through a symlink.")
+        if not parent.exists():
+            return
+    target = parent / parts[-1]
+    if target.is_symlink():
+        target.unlink()
+    elif target.exists():
+        target.resolve().relative_to(root.resolve())
+        _wipe_tree(target)
+    else:
+        return
+    cursor = target.parent
+    while cursor != root and cursor.exists():
+        try:
+            cursor.rmdir()
+        except OSError:
+            break
+        cursor = cursor.parent
+
+
 def write_index(store: Store) -> None:
     root = _vault_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -367,6 +397,42 @@ def _day(value: str | None) -> str:
     if _DAY.fullmatch(text):
         return text
     return datetime.now(timezone.utc).date().isoformat()
+
+
+def _wipe_tree(path: Path) -> None:
+    """Overwrite regular files, then remove them. Do not follow symlinks."""
+    if path.is_symlink():
+        path.unlink()
+        return
+    if path.is_file():
+        _overwrite(path)
+        path.unlink()
+        return
+    if path.is_dir():
+        for child in list(path.iterdir()):
+            _wipe_tree(child)
+        path.rmdir()
+        return
+    path.unlink(missing_ok=True)
+
+
+def _overwrite(path: Path) -> None:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return
+    if size <= 0:
+        return
+    with path.open("r+b") as handle:
+        remaining = size
+        chunk = b"\0" * min(remaining, 1024 * 1024)
+        while remaining:
+            written = handle.write(chunk[:remaining])
+            if written <= 0:
+                break
+            remaining -= written
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _write(path: Path, text: str) -> None:
