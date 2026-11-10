@@ -56,7 +56,12 @@
   {% endfor %}
   <div class="mast-row">
     <h1>{{ ns.heading }}</h1>
-    <p class="count">{{ rows|length + (also|length if also else 0) }}</p>
+    <div class="mast-actions">
+      {% if can_delete %}
+      <a class="danger" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a>
+      {% endif %}
+      <p class="count">{{ rows|length + (also|length if also else 0) }}</p>
+    </div>
   </div>
   {% if q %}
   <p class="lede">{{ t('index.matches', count=rows|length, query=q) }}</p>
@@ -66,9 +71,6 @@
   <p class="lede" title="{{ ns.full }}">{{ t('index.lede_project') }}</p>
   {% else %}
   <p class="lede">{{ t('index.lede_all') }}</p>
-  {% endif %}
-  {% if can_delete %}
-  <p class="hint"><a class="text-link" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a></p>
   {% endif %}
   {% if active %}
   <p class="identity-strip">
@@ -82,7 +84,7 @@
   <h2 class="section-title">{{ t('index.leftover_scopes') }}</h2>
   <p class="hint">{{ t('index.leftover_hint') }}</p>
   {% for item in leftovers %}
-  <p class="hint"><a class="text-link" href="/scopes/forget?scope={{ item.scope | urlencode }}">{{ t('index.delete_scope') }}</a> <code>{{ item.scope }}</code></p>
+  <p class="hint"><a class="danger" href="/scopes/forget?scope={{ item.scope | urlencode }}">{{ t('index.delete_scope') }}</a> <code>{{ item.scope }}</code></p>
   {% endfor %}
 </section>
 {% endif %}

@@ -217,6 +217,12 @@ def test_forgetting_a_whole_scope():
         client.post("/memories", data={"text": "Projekt B.", "scope": "project:github.com/acme/b"})
         client.post("/memories", data={"text": "Global bleibt.", "scope": "global"})
 
+        page = client.get("/?scope=project:github.com/acme/a")
+        assert page.status_code == 200
+        assert page.text.count('class="danger"') >= 2
+        assert "Delete scope" in page.text
+        assert "/scopes/forget?scope=project%3Agithub.com/acme/a" in page.text
+
         confirm = client.get("/scopes/forget?scope=project:github.com/acme/a")
         assert confirm.status_code == 200
         assert "Delete scope?" in confirm.text

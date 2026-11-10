@@ -108,6 +108,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   overflow: auto;
   min-height: 0;
 }
+.scope-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .scope, .text-btn {
   display: flex;
   justify-content: space-between;
@@ -163,9 +168,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .mast { margin-bottom: 16px; }
 .mast-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.mast-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 .mast h1, .sheet h2 {
   font-weight: 600;
@@ -268,7 +279,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .scope-extra summary { min-height: 36px; display: flex; align-items: center; }
 .scope-extra[open] { display: flex; flex-direction: column; gap: 8px; }
 
-button, .ghost-link {
+button, .ghost-link, a.danger {
   min-height: 40px;
   border-radius: 8px;
   padding: 0 14px;
@@ -294,10 +305,20 @@ button.ghost, .actions button, .actions a, .ghost-link {
 button.ghost:hover, .actions button:hover, .actions a:hover, .ghost-link:hover {
   border-color: var(--text);
 }
-button.danger {
-  background: transparent;
+button.danger, a.danger {
+  background: #2a1c19;
   color: var(--danger);
   border: 1px solid #6a3d36;
+  font-weight: 600;
+}
+button.danger:hover, a.danger:hover {
+  background: #3a2420;
+  border-color: var(--danger);
+}
+.scope-line a.danger {
+  min-height: 32px;
+  width: 100%;
+  font-size: 0.92rem;
 }
 .confirm-row { margin-top: 14px; }
 .actions a { padding: 0 12px; }
@@ -408,6 +429,8 @@ details form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px;
   }
   .scopes { flex-direction: row; overflow-x: auto; }
   .scope { width: auto; }
+  .scope-line { width: auto; }
+  .scope-line a.danger { display: none; }
   .rail-foot { margin-top: 0; flex-direction: row; border-top: 0; padding-top: 0; }
   .rail-foot .scope, .rail-foot .text-btn { width: auto; }
   .page { padding: 18px 14px 56px; }
