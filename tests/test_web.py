@@ -219,9 +219,11 @@ def test_forgetting_a_whole_scope():
 
         page = client.get("/?scope=project:github.com/acme/a")
         assert page.status_code == 200
-        assert page.text.count('class="danger"') >= 2
+        assert page.text.count('class="danger"') == 1
         assert "Delete scope" in page.text
         assert "/scopes/forget?scope=project%3Agithub.com/acme/a" in page.text
+        assert 'class="scopes"' in page.text
+        assert page.text.count("Delete scope") == 1
 
         confirm = client.get("/scopes/forget?scope=project:github.com/acme/a")
         assert confirm.status_code == 200
@@ -248,13 +250,33 @@ def test_forgetting_a_whole_scope():
         assert "err=" in bad.headers["location"]
 
 
-def test_global_scope_can_be_deleted_but_not_the_all_view():
+def test_global_scope_can_be_reset_but_not_deleted():
     app = create_app()
     with TestClient(app) as client:
         client.post("/memories", data={"text": "Ein globaler Fakt.", "scope": "global"})
         assert client.get("/scopes/forget?scope=project:github.com/acme/x").status_code == 404
         assert client.get("/scopes/forget?scope=all").status_code == 404
+        assert client.get("/scopes/forget?scope=global").status_code == 404
 
-        client.post("/scopes/forget", data={"scope": "global"}, follow_redirects=False)
+        page = client.get("/?scope=global")
+        assert "Reset" in page.text
+        assert "/scopes/reset" in page.text
+        assert "/scopes/forget?scope=global" not in page.text
+        assert page.text.count('class="danger"') == 1
+
+        refused = client.post("/scopes/forget", data={"scope": "global"}, follow_redirects=False)
+        assert refused.status_code == 303
+        assert "err=" in refused.headers["location"]
+        assert "Ein globaler Fakt." in client.get("/").text
+
+        confirm = client.get("/scopes/reset")
+        assert confirm.status_code == 200
+        assert "Reset global?" in confirm.text
+        reset = client.post("/scopes/reset", follow_redirects=False)
+        assert reset.status_code == 303
         assert "Ein globaler Fakt." not in client.get("/").text
         assert get_service().store.scope_counts("global")["memories"] == 0
+        from memoryforge.vault import scope_dir
+
+        assert scope_dir("global").is_dir()
+        assert client.get("/?scope=global").status_code == 200

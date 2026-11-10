@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MemoryForge{% endblock %}</title>
   <link rel="icon" href="/static/favicon.svg?v=5" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=6">
+  <link rel="stylesheet" href="/static/app.css?v=7">
 </head>
 <body>
   <div class="shell">
@@ -23,22 +23,14 @@
         <a class="scope {% if not active %}is-active{% endif %}" href="/">
           <span>{{ t('nav.all') }}</span><em>{{ total }}</em>
         </a>
-        <div class="scope-line">
-          <a class="scope {% if active == 'global' %}is-active{% endif %}" href="/?scope=global">
-            <span>{{ t('nav.global') }}</span><em>{{ ns.global_count }}</em>
-          </a>
-          {% if ns.global_count or (active == 'global' and can_delete) %}
-          <a class="danger" href="/scopes/forget?scope=global">{{ t('index.delete_scope') }}</a>
-          {% endif %}
-        </div>
+        <a class="scope {% if active == 'global' %}is-active{% endif %}" href="/?scope=global">
+          <span>{{ t('nav.global') }}</span><em>{{ ns.global_count }}</em>
+        </a>
         {% for item in scopes %}
           {% if item.scope != 'global' %}
-          <div class="scope-line">
-            <a class="scope {% if active == item.scope %}is-active{% endif %}" href="/?scope={{ item.scope | urlencode }}" title="{{ item.scope }}">
-              <span>{{ item.label }}</span><em>{{ item.count }}</em>
-            </a>
-            <a class="danger" href="/scopes/forget?scope={{ item.scope | urlencode }}">{{ t('index.delete_scope') }}</a>
-          </div>
+          <a class="scope {% if active == item.scope %}is-active{% endif %}" href="/?scope={{ item.scope | urlencode }}" title="{{ item.scope }}">
+            <span>{{ item.label }}</span><em>{{ item.count }}</em>
+          </a>
           {% endif %}
         {% endfor %}
       </nav>

@@ -373,10 +373,24 @@ class MemoryService:
         resolved = normalize_scope(scope)
         if not resolved:
             raise MemoryError("error.invalid_scope", "Ungültiger Scope.")
+        if resolved == "global":
+            raise MemoryError("error.global_scope", "Global kann nicht gelöscht werden.")
         if not self.has_scope_data(resolved):
             raise KeyError(resolved)
         counts = self.store.purge_scope(resolved)
         self._drop_projection(resolved)
+        return counts["memories"]
+
+    def reset_scope(self, scope: str) -> int:
+        """Clear Global. The scope stays; its rows and files do not."""
+        resolved = normalize_scope(scope) or ""
+        if resolved != "global":
+            raise MemoryError("error.global_scope", "Nur Global kann zurückgesetzt werden.")
+        if not self.has_scope_data("global"):
+            raise KeyError("global")
+        counts = self.store.purge_scope("global")
+        self._drop_projection("global")
+        self._sync("global")
         return counts["memories"]
 
     def pin(self, memory_id: str, pinned: bool = True) -> dict:

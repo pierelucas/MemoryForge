@@ -4,8 +4,10 @@
 <header class="mast">
   <div class="mast-row">
     <h1>{{ t('persona.heading') }}</h1>
-    {% if can_delete %}
+    {% if can_delete and active != 'global' %}
     <a class="danger" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a>
+    {% elif can_delete and active == 'global' %}
+    <a class="danger" href="/scopes/reset">{{ t('index.reset_scope') }}</a>
     {% endif %}
   </div>
   <p class="lede">{{ t('persona.lede') }}</p>

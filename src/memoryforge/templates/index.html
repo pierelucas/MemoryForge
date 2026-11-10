@@ -57,8 +57,10 @@
   <div class="mast-row">
     <h1>{{ ns.heading }}</h1>
     <div class="mast-actions">
-      {% if can_delete %}
+      {% if can_delete and active != 'global' %}
       <a class="danger" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a>
+      {% elif can_delete and active == 'global' %}
+      <a class="danger" href="/scopes/reset">{{ t('index.reset_scope') }}</a>
       {% endif %}
       <p class="count">{{ rows|length + (also|length if also else 0) }}</p>
     </div>
@@ -84,7 +86,7 @@
   <h2 class="section-title">{{ t('index.leftover_scopes') }}</h2>
   <p class="hint">{{ t('index.leftover_hint') }}</p>
   {% for item in leftovers %}
-  <p class="hint"><a class="danger" href="/scopes/forget?scope={{ item.scope | urlencode }}">{{ t('index.delete_scope') }}</a> <code>{{ item.scope }}</code></p>
+  <p class="hint">{% if item.scope == 'global' %}<a class="danger" href="/scopes/reset">{{ t('index.reset_scope') }}</a>{% else %}<a class="danger" href="/scopes/forget?scope={{ item.scope | urlencode }}">{{ t('index.delete_scope') }}</a>{% endif %} <code>{{ item.scope }}</code></p>
   {% endfor %}
 </section>
 {% endif %}

@@ -314,7 +314,7 @@ def create_app() -> FastAPI:
     @app.get("/scopes/forget", response_class=HTMLResponse)
     def forget_scope_confirm(request: Request, scope: str = ""):
         resolved = normalize_scope(scope)
-        if not resolved:
+        if not resolved or resolved == "global":
             raise HTTPException(status_code=404)
         service = get_service()
         foot = service.scope_footprint(resolved)
@@ -343,6 +343,35 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             return _redirect("/", err=_error(lang, exc))
         return _redirect("/", msg=translate(lang, "flash.scope_forgotten", count=count))
+
+    @app.get("/scopes/reset", response_class=HTMLResponse)
+    def reset_scope_confirm(request: Request):
+        service = get_service()
+        foot = service.scope_footprint("global")
+        if not (foot["memories"] or foot["dreams"] or foot["personas"] or foot["vault"]):
+            raise HTTPException(status_code=404)
+        return templates.TemplateResponse(
+            request,
+            "reset_scope.html",
+            _page(
+                request,
+                active="global",
+                count=foot["memories"],
+                dreams=foot["dreams"],
+                personas=foot["personas"],
+            ),
+        )
+
+    @app.post("/scopes/reset")
+    def reset_scope():
+        lang = load_config().ui.lang
+        try:
+            count = get_service().reset_scope("global")
+        except KeyError:
+            raise HTTPException(status_code=404) from None
+        except ValueError as exc:
+            return _redirect("/?scope=global", err=_error(lang, exc))
+        return _redirect(_home("global", translate(lang, "flash.scope_reset", count=count)))
 
     @app.post("/memories/{memory_id}/pin")
     def pin_memory(memory_id: str, scope: str = Form("")):

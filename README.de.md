@@ -93,7 +93,7 @@ memoryforge doctor
 
 Standardadresse: <http://127.0.0.1:4737/>
 
-In der Leiste stehen die Scopes. **Alle** zeigt alles. **Global** nur globale Fakten. **Persona** ist die Stimme für diesen Scope. Die Schicht-Tabs trennen dauerhafte Fakten, Tagesnotizen und das Traumtagebuch. **Dateien** zeigt die Markdown-Projektion; sie zu bearbeiten schreibt nicht zurück. Ein Repository zeigt dieses Repository und darunter die globalen Fakten, die ein Agent dort mitliest. Die Suche in einem Repository durchsucht beide. **Scope löschen** auf einer Scope-Seite entfernt den Scope nach einer Bestätigung: Erinnerungen, Träume, Persona und die Vault-Dateien werden aus der Datenbank und vom Datenträger gelöscht. **Alle** ist eine Ansicht, kein Scope, und hat deshalb keinen Lösch-Link. Ein vorhandenes Backup wird nicht umgeschrieben.
+In der Leiste stehen die Scopes. **Alle** zeigt alles. **Global** nur globale Fakten. **Persona** ist die Stimme für diesen Scope. Die Schicht-Tabs trennen dauerhafte Fakten, Tagesnotizen und das Traumtagebuch. **Dateien** zeigt die Markdown-Projektion; sie zu bearbeiten schreibt nicht zurück. Ein Repository zeigt dieses Repository und darunter die globalen Fakten, die ein Agent dort mitliest. Die Suche in einem Repository durchsucht beide. **Scope löschen** auf einer Projektseite entfernt den Scope nach einer Bestätigung: Erinnerungen, Träume, Persona und die Vault-Dateien werden aus der Datenbank und vom Datenträger gelöscht. **Global** kann nicht gelöscht werden. **Zurücksetzen** leert den Inhalt und lässt den Scope stehen. **Alle** ist eine Ansicht, kein Scope, und hat deshalb keinen Lösch-Link. Ein vorhandenes Backup wird nicht umgeschrieben.
 
 **Merken** speichert einen Fakt im Scope über dem Knopf. **Anderer Scope** ist für einen Namen, den es noch nicht gibt. Eine Git-URL in dem Feld wird umgeschrieben. `/` setzt den Fokus in die Suche. Strg+Enter oder Cmd+Enter speichert die Notiz, in der du gerade tippst.
 
@@ -206,7 +206,7 @@ Call memory_note for a working note that should stay in memory/YYYY-MM-DD.md unt
 When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
 Do not store secrets, tokens, or ephemeral task state.
 Do not edit the vault files. They are a projection. SQLite is the source of truth. DREAMS.md is review only.
-Deleting a scope in the notebook removes that scope from the database and from disk, including forgotten rows, dreams, persona, and vault files. Forgetting one memory still only hides that row. An existing backup is not rewritten.
+Deleting a project scope in the notebook removes that scope from the database and from disk, including forgotten rows, dreams, persona, and vault files. Global cannot be deleted. Reset clears its contents and leaves the scope in place. Forgetting one memory still only hides that row. An existing backup is not rewritten.
 ```
 
 | Werkzeug | Zweck |
