@@ -345,27 +345,6 @@ class Store:
             "personas": int(personas["n"]) if personas else 0,
         }
 
-    def residue_scopes(self) -> list[str]:
-        """Scopes that still have rows, but no active memory, so the sidebar hides them."""
-        with self._lock:
-            rows = self.conn.execute(
-                """
-                SELECT scope FROM (
-                    SELECT scope FROM memories
-                    UNION
-                    SELECT scope FROM dreams
-                    UNION
-                    SELECT scope FROM personas
-                )
-                WHERE scope NOT IN (
-                    SELECT scope FROM memories
-                    WHERE forgotten = 0 AND superseded_by IS NULL
-                )
-                ORDER BY scope
-                """
-            ).fetchall()
-        return [row["scope"] for row in rows]
-
     def purge_scope(self, scope: str) -> dict[str, int]:
         """Delete every row for a scope. Returns how many rows were removed.
 

@@ -81,16 +81,6 @@
   {% endif %}
 </header>
 
-{% if leftovers %}
-<section class="list" aria-label="{{ t('index.leftover_scopes') }}">
-  <h2 class="section-title">{{ t('index.leftover_scopes') }}</h2>
-  <p class="hint">{{ t('index.leftover_hint') }}</p>
-  {% for item in leftovers %}
-  <p class="hint">{% if item.scope == 'global' %}<a class="danger" href="/scopes/reset">{{ t('index.reset_scope') }}</a>{% else %}<a class="danger" href="/scopes/forget?scope={{ item.scope | urlencode }}">{{ t('index.delete_scope') }}</a>{% endif %} <code>{{ item.scope }}</code></p>
-  {% endfor %}
-</section>
-{% endif %}
-
 <div class="stats" aria-label="{{ t('index.layer_all') }}">
   <span><strong>{{ counts.durable }}</strong> {{ t('index.stat_durable') }}</span>
   <span><strong>{{ counts.daily }}</strong> {{ t('index.stat_daily') }}</span>

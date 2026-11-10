@@ -230,12 +230,6 @@ def create_app() -> FastAPI:
                 counts=counts,
                 dream_count=len(service.list_dreams(active or None, limit=200)),
                 persona_line=persona_line,
-                leftovers=[]
-                if active
-                else [
-                    {"scope": name, "label": scope_label(name)}
-                    for name in service.residue_scopes()
-                ],
                 msg=msg,
                 err=err,
             ),

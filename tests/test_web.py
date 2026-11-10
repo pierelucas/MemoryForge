@@ -190,7 +190,27 @@ def test_deleting_a_scope_erases_related_data_from_disk():
         assert gone.status_code == 404
 
 
-def test_hidden_scope_can_still_be_deleted_from_disk():
+def test_all_view_has_no_delete_control_and_cannot_be_purged():
+    app = create_app()
+    with TestClient(app) as client:
+        client.post("/memories", data={"text": "Bleibt in Alle.", "scope": "global"})
+        client.post("/memories", data={"text": "Projekt bleibt.", "scope": "project:github.com/acme/keep"})
+        home = client.get("/")
+        assert "Delete scope" not in home.text
+        assert "Reset" not in home.text
+        assert "/scopes/forget" not in home.text
+        assert "/scopes/reset" not in home.text
+        assert "test" not in home.text
+
+        for banned in ("all", "*", "", "global"):
+            refused = client.post("/scopes/forget", data={"scope": banned}, follow_redirects=False)
+            assert refused.status_code == 303
+            assert "err=" in refused.headers["location"]
+        assert get_service().store.scope_counts("global")["memories"] == 1
+        assert get_service().store.scope_counts("project:github.com/acme/keep")["memories"] == 1
+
+
+def test_hidden_scope_is_not_offered_on_the_all_view():
     scope = "project:github.com/acme/old"
     app = create_app()
     with TestClient(app) as client:
@@ -199,15 +219,14 @@ def test_hidden_scope_can_still_be_deleted_from_disk():
         get_service().forget(row["id"])
 
         home = client.get("/")
-        assert scope in home.text
-        assert "/scopes/forget?scope=project%3Agithub.com/acme/old" in home.text
+        assert "Delete scope" not in home.text
+        assert scope not in home.text
 
-        confirm = client.get(f"/scopes/forget?scope={scope}")
-        assert confirm.status_code == 200
+        page = client.get(f"/?scope={scope}")
+        assert "Delete scope" in page.text
         deleted = client.post("/scopes/forget", data={"scope": scope}, follow_redirects=False)
         assert deleted.status_code == 303
         assert get_service().store.scope_counts(scope)["memories"] == 0
-        assert scope not in client.get("/").text
 
 
 def test_forgetting_a_whole_scope():

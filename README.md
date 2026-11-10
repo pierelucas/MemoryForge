@@ -93,7 +93,7 @@ memoryforge doctor
 
 Default URL: <http://127.0.0.1:4737/>
 
-The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. **Persona** is the voice for that scope. Layer tabs split durable facts, daily notes, and the dream diary. **Files** shows the Markdown projection; editing it does not write back. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a project page removes that scope after a confirmation page: memories, dreams, persona, and the vault files are deleted from the database and from disk. **Global** cannot be deleted. **Reset** clears its contents and leaves the scope in place. **All** is a view, not a scope, so it has no delete link. An existing backup archive is not rewritten.
+The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. **Persona** is the voice for that scope. Layer tabs split durable facts, daily notes, and the dream diary. **Files** shows the Markdown projection; editing it does not write back. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a project page removes that scope after a confirmation page: memories, dreams, persona, and the vault files are deleted from the database and from disk. **All** is a view, not a scope. **Global** is a scope that stays. Neither can be deleted from the notebook, the CLI, or an agent. **Reset** clears Global and leaves the scope in place. An existing backup archive is not rewritten.
 
 **Remember** stores one fact in the scope selected above the button. **Other scope** is for a scope that does not exist yet. A git URL in that field is normalized. `/` focuses search. Ctrl+Enter or Cmd+Enter submits the note you are typing.
 
@@ -206,7 +206,7 @@ Call memory_note for a working note that should stay in memory/YYYY-MM-DD.md unt
 When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
 Do not store secrets, tokens, or ephemeral task state.
 Do not edit the vault files. They are a projection. SQLite is the source of truth. DREAMS.md is review only.
-Deleting a project scope in the notebook removes that scope from the database and from disk, including forgotten rows, dreams, persona, and vault files. Global cannot be deleted. Reset clears its contents and leaves the scope in place. Forgetting one memory still only hides that row. An existing backup is not rewritten.
+Deleting a project scope in the notebook removes that scope from the database and from disk, including forgotten rows, dreams, persona, and vault files. All is a view, not a scope. Global is a scope that stays. Neither can be deleted from the notebook, the CLI, or an agent. Reset clears Global and leaves the scope in place. Forgetting one memory still only hides that row. An existing backup is not rewritten.
 ```
 
 | Tool | Use |

@@ -365,16 +365,11 @@ class MemoryService:
         foot = self.scope_footprint(scope)
         return bool(foot["memories"] or foot["dreams"] or foot["personas"] or foot["vault"])
 
-    def residue_scopes(self) -> list[str]:
-        return self.store.residue_scopes()
-
     def forget_scope(self, scope: str) -> int:
-        """Remove a scope and everything that belongs to it, on disk as well as in the UI."""
+        """Remove a project scope and everything that belongs to it."""
         resolved = normalize_scope(scope)
-        if not resolved:
-            raise MemoryError("error.invalid_scope", "Ungültiger Scope.")
-        if resolved == "global":
-            raise MemoryError("error.global_scope", "Global kann nicht gelöscht werden.")
+        if resolved in {"", "global"}:
+            raise MemoryError("error.protected_scope", "Alle und Global können nicht gelöscht werden.")
         if not self.has_scope_data(resolved):
             raise KeyError(resolved)
         counts = self.store.purge_scope(resolved)
