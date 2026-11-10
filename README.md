@@ -12,6 +12,8 @@ The file layout follows OpenClaw and Claude Code:
 
 | Layer | File | Search |
 |---|---|---|
+| Identity | `IDENTITY.md` | name, vibe, mark. Evergreen. Not a fact. |
+| Voice | `SOUL.md` | tone and boundaries. Project wins over global. |
 | Profile | `USER.md` | evergreen preferences, written as directives |
 | Durable | `MEMORY.md` | evergreen facts, decisions, conventions, lessons |
 | Daily | `memory/YYYY-MM-DD.md` | working notes, 30-day half-life |
@@ -91,7 +93,7 @@ memoryforge doctor
 
 Default URL: <http://127.0.0.1:4737/>
 
-The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. Layer tabs split durable facts, daily notes, and the dream diary. **Files** shows the Markdown projection; editing it does not write back. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a scope page hides every active fact in it after a confirmation page. The rows stay in the file, and **All** is a view, not a scope, so it has no delete link.
+The sidebar is the scope list. **All** shows everything. **Global** shows only global facts. **Persona** is the voice for that scope. Layer tabs split durable facts, daily notes, and the dream diary. **Files** shows the Markdown projection; editing it does not write back. A repository shows that repository, and underneath the global facts an agent would also see there. Search in a repository searches both. **Delete scope** on a scope page hides every active fact in it after a confirmation page. The rows stay in the file, and **All** is a view, not a scope, so it has no delete link.
 
 **Remember** stores one fact in the scope selected above the button. **Other scope** is for a scope that does not exist yet. A git URL in that field is normalized. `/` focuses search. Ctrl+Enter or Cmd+Enter submits the note you are typing.
 
@@ -141,6 +143,7 @@ memoryforge vault
 ## CLI
 
 ```bash
+memoryforge persona set soul "Be precise. No filler." --scope global
 memoryforge note "Heute den Port geprüft."
 memoryforge add "Bevorzuge pnpm statt npm."
 memoryforge add --scope global "Antworten dürfen Deutsch sein."
@@ -195,7 +198,8 @@ Older configs, without `servers`:
 The tools do nothing if the agent never calls them. Put this in the project instructions:
 
 ```text
-At session start call memory_brief. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
+At session start call memory_brief and read card first. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
+Call memory_persona_set when the user states a name, vibe, or voice. Global applies everywhere. Project wins on conflict.
 When you learn a durable preference, decision, convention, or debug lesson, call memory_add with one or a few sentences.
 Call memory_note for a working note that should not enter MEMORY.md until dreaming promotes it.
 When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
@@ -204,7 +208,8 @@ Do not store secrets, tokens, or ephemeral task state.
 
 | Tool | Use |
 |---|---|
-| `memory_brief` | session start: pinned facts, then recent ones |
+| `memory_brief` | session start: read `card` first. Persona, directives, standing facts, recent notes |
+| `memory_persona_set` | set `identity` or `soul` for a scope. Empty text clears it |
 | `memory_search` | meaning plus full text |
 | `memory_add` | store a durable fact |
 | `memory_note` | store a daily note; dreaming may promote it later |

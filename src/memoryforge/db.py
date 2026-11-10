@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS dreams (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dreams_scope ON dreams(scope, created_at);
+
+CREATE TABLE IF NOT EXISTS personas (
+    id INTEGER PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
+    scope TEXT NOT NULL,
+    slot TEXT NOT NULL,
+    text TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(scope, slot)
+);
 """
 
 
@@ -473,6 +483,63 @@ class Store:
             ).fetchall()
         return [_dream_to_dict(row) for row in rows]
 
+    def get_persona(self, scope: str, slot: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM personas WHERE scope = ? AND slot = ?",
+                (scope, slot),
+            ).fetchone()
+        return _persona_to_dict(row) if row else None
+
+    def set_persona(self, scope: str, slot: str, text: str) -> dict:
+        now = utc_now()
+        persona_id = uuid.uuid4().hex
+        with self._lock:
+            self.conn.execute(
+                """
+                INSERT INTO personas (uuid, scope, slot, text, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(scope, slot) DO UPDATE SET
+                    text = excluded.text,
+                    updated_at = excluded.updated_at
+                """,
+                (persona_id, scope, slot, text, now),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT * FROM personas WHERE scope = ? AND slot = ?",
+                (scope, slot),
+            ).fetchone()
+        return _persona_to_dict(row)
+
+    def delete_persona(self, scope: str, slot: str) -> None:
+        with self._lock:
+            self.conn.execute(
+                "DELETE FROM personas WHERE scope = ? AND slot = ?",
+                (scope, slot),
+            )
+            self.conn.commit()
+
+    def personas_in(self, scopes: list[str]) -> dict[str, dict[str, str]]:
+        found = {scope: {"identity": "", "soul": ""} for scope in scopes if scope}
+        if not found:
+            return {}
+        marks = ",".join("?" for _ in found)
+        with self._lock:
+            rows = self.conn.execute(
+                f"SELECT scope, slot, text FROM personas WHERE scope IN ({marks})",
+                list(found),
+            ).fetchall()
+        for row in rows:
+            if row["slot"] in {"identity", "soul"}:
+                found[row["scope"]][row["slot"]] = row["text"]
+        return found
+
+    def persona_scopes(self) -> list[str]:
+        with self._lock:
+            rows = self.conn.execute("SELECT DISTINCT scope FROM personas ORDER BY scope").fetchall()
+        return [row["scope"] for row in rows]
+
     def dream_scopes(self) -> list[str]:
         with self._lock:
             rows = self.conn.execute("SELECT DISTINCT scope FROM dreams ORDER BY scope").fetchall()
@@ -650,6 +717,16 @@ def row_to_dict(row: sqlite3.Row) -> dict:
         "last_recalled_at": row["last_recalled_at"] if "last_recalled_at" in row.keys() else None,
         "importance": int(row["importance"]) if "importance" in row.keys() and row["importance"] is not None else 5,
         "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _persona_to_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["uuid"],
+        "scope": row["scope"],
+        "slot": row["slot"],
+        "text": row["text"],
         "updated_at": row["updated_at"],
     }
 

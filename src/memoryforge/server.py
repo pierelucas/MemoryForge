@@ -199,6 +199,16 @@ def create_app() -> FastAPI:
             also = service.list_memories("global", limit=40, tier=tier)
         else:
             rows = service.list_memories(active or None, limit=80, tier=tier)
+        persona_line = ""
+        if active:
+            from memoryforge.persona import identity_line
+
+            view = service.persona_view(active)
+            own = view["global"] if active == "global" else (view.get("project") or {})
+            persona_line = identity_line((own or {}).get("identity") or "")
+            if not persona_line:
+                soul = ((own or {}).get("soul") or "").strip()
+                persona_line = soul.splitlines()[0][:80] if soul else ""
         counts = service.store.tier_counts(active or None)
         if active and active != "global":
             extra = service.store.tier_counts("global")
@@ -219,6 +229,7 @@ def create_app() -> FastAPI:
                 layer=chosen,
                 counts=counts,
                 dream_count=len(service.list_dreams(active or None, limit=200)),
+                persona_line=persona_line,
                 msg=msg,
                 err=err,
             ),
@@ -324,6 +335,50 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404)
         get_service().pin(memory_id, not row["pinned"])
         return _redirect(_home(scope or row["scope"]))
+
+    @app.get("/persona", response_class=HTMLResponse)
+    def persona_page(request: Request, scope: str = "", msg: str = "", err: str = ""):
+        from memoryforge.persona import parse_identity
+
+        service = get_service()
+        active = normalize_scope(scope) or "global"
+        view = service.persona_view(active)
+        own = view["global"] if active == "global" else (view["project"] or {"identity": "", "soul": ""})
+        card = service.brief(active).get("card") or ""
+        return templates.TemplateResponse(
+            request,
+            "persona.html",
+            _page(
+                request,
+                active=active,
+                section="persona",
+                identity=parse_identity(own.get("identity") or ""),
+                soul=own.get("soul") or "",
+                card=card,
+                msg=msg,
+                err=err,
+            ),
+        )
+
+    @app.post("/persona")
+    def save_persona(
+        scope: str = Form("global"),
+        name: str = Form(""),
+        vibe: str = Form(""),
+        emoji: str = Form(""),
+        soul: str = Form(""),
+    ):
+        from memoryforge.persona import format_identity
+
+        lang = load_config().ui.lang
+        resolved = normalize_scope(scope) or "global"
+        service = get_service()
+        try:
+            service.set_persona(resolved, "identity", format_identity(name, vibe, emoji))
+            service.set_persona(resolved, "soul", soul)
+        except ValueError as exc:
+            return _redirect(f"/persona?scope={quote(resolved)}", err=_error(lang, exc))
+        return _redirect(f"/persona?scope={quote(resolved)}", msg=translate(lang, "flash.saved"))
 
     @app.get("/files", response_class=HTMLResponse)
     def files(request: Request, scope: str = "", file: str = "memory"):

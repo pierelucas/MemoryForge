@@ -70,6 +70,11 @@
   {% if active and scopes | selectattr('scope', 'equalto', active) | list %}
   <p class="hint"><a class="text-link" href="/scopes/forget?scope={{ active | urlencode }}">{{ t('index.delete_scope') }}</a></p>
   {% endif %}
+  {% if active %}
+  <p class="identity-strip">
+    <a href="/persona?scope={{ active | urlencode }}">{% if persona_line %}{{ persona_line }}{% else %}{{ t('persona.set') }}{% endif %}</a>
+  </p>
+  {% endif %}
 </header>
 
 <div class="stats" aria-label="{{ t('index.layer_all') }}">

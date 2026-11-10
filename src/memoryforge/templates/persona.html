@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ t('persona.title') }}{% endblock %}
+{% block main %}
+<header class="mast">
+  <div class="mast-row">
+    <h1>{{ t('persona.heading') }}</h1>
+  </div>
+  <p class="lede">{{ t('persona.lede') }}</p>
+  <p class="hint"><code>{{ active }}</code></p>
+</header>
+
+<div class="persona-grid">
+  <form class="sheet" method="post" action="/persona">
+    <input type="hidden" name="scope" value="{{ active }}">
+    <h2>{{ t('persona.identity') }}</h2>
+    <p class="hint">{{ t('persona.identity_hint') }}</p>
+    <div class="fields">
+      <label>
+        {{ t('persona.name') }}
+        <input name="name" value="{{ identity.name }}" maxlength="80" autocomplete="off">
+      </label>
+      <label>
+        {{ t('persona.emoji') }}
+        <input name="emoji" value="{{ identity.emoji }}" maxlength="8" autocomplete="off">
+      </label>
+    </div>
+    <label>
+      {{ t('persona.vibe') }}
+      <input name="vibe" value="{{ identity.vibe }}" maxlength="160" autocomplete="off">
+    </label>
+    <h2>{{ t('persona.soul') }}</h2>
+    <p class="hint">{{ t('persona.soul_hint') }}</p>
+    <textarea name="soul" rows="8" maxlength="2000" placeholder="{{ t('persona.soul_placeholder') }}">{{ soul }}</textarea>
+    <div class="composer-row">
+      <button type="submit">{{ t('persona.save') }}</button>
+      <button type="button" class="ghost" id="persona-starter">{{ t('persona.starter') }}</button>
+    </div>
+  </form>
+
+  <aside class="sheet">
+    <h2>{{ t('persona.card') }}</h2>
+    <p class="hint">{{ t('persona.card_hint') }}</p>
+    <pre class="card-preview">{{ card }}</pre>
+  </aside>
+</div>
+<script src="/static/app.js?v=5"></script>
+{% endblock %}

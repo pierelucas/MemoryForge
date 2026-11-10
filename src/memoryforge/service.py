@@ -252,6 +252,8 @@ class MemoryService:
             since=since.isoformat(),
             limit=6,
         )
+        standing = [item for item in pinned if item["id"] not in {row["id"] for row in directives}]
+        other = [item for item in durable if item.get("kind") != "preference" and not item.get("pinned")]
         seen: set[str] = set()
         memories: list[dict] = []
         for bucket in (pinned, directives, durable, daily):
@@ -264,23 +266,66 @@ class MemoryService:
                     break
             if len(memories) >= 12:
                 break
+        persona = self.persona_view(resolved or None)
         if resolved:
             self._sync(resolved)
             if include_global:
                 self._sync("global")
         else:
             self._sync()
+        from memoryforge.persona import context_card
         from memoryforge.vault import vault_dir, vault_files
 
         files = vault_files(resolved) if resolved else {"index": str(vault_dir() / "INDEX.md")}
+        card = context_card(
+            scope=resolved or "all",
+            persona=persona,
+            directives=directives,
+            standing=standing[:4],
+            durable=other[:4],
+            daily=daily[:4],
+        )
         return {
             "scope": resolved or "all",
+            "card": card,
+            "persona": persona,
             "memories": memories[:12],
             "directives": directives,
-            "durable": [item for item in durable if item.get("kind") != "preference"][:6],
+            "durable": other[:6],
             "daily": daily,
             "files": files,
         }
+
+    def persona_view(self, scope: str | None) -> dict:
+        resolved = scope or ""
+        wanted = ["global"]
+        if resolved and resolved != "global":
+            wanted.append(resolved)
+        stored = self.store.personas_in(wanted)
+        view = {
+            "global": stored.get("global") or {"identity": "", "soul": ""},
+            "project": None,
+        }
+        if resolved and resolved != "global":
+            view["project"] = stored.get(resolved) or {"identity": "", "soul": ""}
+        return view
+
+    def set_persona(self, scope: str, slot: str, text: str) -> dict | None:
+        from memoryforge.persona import PersonaError, clean_persona, normalize_slot
+
+        resolved = normalize_scope(scope) or "global"
+        try:
+            chosen = normalize_slot(slot)
+            cleaned = clean_persona(chosen, text)
+        except PersonaError as exc:
+            raise MemoryError(exc.key, str(exc)) from exc
+        if not cleaned:
+            self.store.delete_persona(resolved, chosen)
+            self._sync(resolved)
+            return None
+        row = self.store.set_persona(resolved, chosen, cleaned)
+        self._sync(resolved)
+        return row
 
     def list_memories(self, scope: str | None = None, limit: int = 50, *, tier: str | None = None) -> list[dict]:
         resolved = normalize_scope(scope) if scope else ""

@@ -236,6 +236,34 @@ def dream(scope: str | None = typer.Option(None, "--scope")) -> None:
 
 
 @app.command()
+def persona(
+    action: str = typer.Argument("show", help="show oder set"),
+    slot: str = typer.Argument("", help="identity oder soul, nur bei set"),
+    text: str = typer.Argument("", help="Text. Leer löscht den Slot."),
+    scope: str | None = typer.Option(None, "--scope"),
+) -> None:
+    """Zeigt oder setzt Identität und Stimme. Global gilt überall, Projekt gewinnt."""
+    service = get_service()
+    resolved = scope or "global"
+    if action == "show":
+        view = service.persona_view(resolved if scope else None)
+        typer.echo(service.brief(resolved if scope else None).get("card") or "")
+        return
+    if action != "set" or not slot:
+        typer.echo("Verwendung: memoryforge persona set identity|soul TEXT [--scope ...]", err=True)
+        raise typer.Exit(code=1)
+    try:
+        row = service.set_persona(resolved, slot, text)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if row is None:
+        typer.echo(f"{slot} in {resolved} gelöscht.")
+    else:
+        typer.echo(f"{slot} in {resolved} gesetzt.")
+
+
+@app.command()
 def vault() -> None:
     """Schreibt die Markdown-Projektion neu und zeigt den Ordner."""
     from memoryforge.vault import rebuild
@@ -297,6 +325,9 @@ def doctor() -> None:
     typer.echo(f"Datenbank    {service.store.path}")
     typer.echo(f"Vault        {service.store.path.parent / 'vault'}")
     typer.echo(f"Erinnerungen {service.store.count_active()}")
+    persona = service.persona_view("global")["global"]
+    voice = "gesetzt" if (persona.get("soul") or persona.get("identity")) else "leer"
+    typer.echo(f"Persona      global {voice}")
     typer.echo(f"Embeddings   {service.embedder.name}")
     typer.echo(f"KI           {'an' if cfg.llm.enabled else 'aus'}  {cfg.llm.provider}  {cfg.llm.model}")
     typer.echo(f"API-Basis    {cfg.llm.base_url or '—'}")

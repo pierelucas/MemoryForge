@@ -40,6 +40,8 @@ def vault_files(scope: str) -> dict[str, str]:
     base = scope_dir(scope)
     today = datetime.now(timezone.utc).date().isoformat()
     return {
+        "identity": str(base / "IDENTITY.md"),
+        "soul": str(base / "SOUL.md"),
         "user": str(base / "USER.md"),
         "memory": str(base / "MEMORY.md"),
         "dreams": str(base / "DREAMS.md"),
@@ -67,6 +69,9 @@ def write_scope(store: Store, scope: str) -> None:
     daily = [row for row in rows if row.get("tier") == "daily"]
     preferences = [row for row in durable if row.get("kind") == "preference"]
     curated = [row for row in durable if row.get("kind") != "preference"]
+    persona = store.personas_in([scope]).get(scope) or {"identity": "", "soul": ""}
+    _write(base / "IDENTITY.md", _identity_md(scope, persona.get("identity") or ""))
+    _write(base / "SOUL.md", _soul_md(scope, persona.get("soul") or ""))
     _write(base / "USER.md", _user_md(scope, preferences))
     _write(base / "MEMORY.md", _memory_md(scope, curated))
     _write(base / "DREAMS.md", _dreams_md(scope, store.list_dreams(scope, limit=40)))
@@ -126,7 +131,11 @@ def rebuild(store: Store) -> Path:
 def read_projection(scope: str, key: str) -> tuple[str, str]:
     """Return (display name, text) for a known file. Rejects arbitrary paths."""
     base = scope_dir(scope)
-    if key == "user":
+    if key == "identity":
+        path, name = base / "IDENTITY.md", "IDENTITY.md"
+    elif key == "soul":
+        path, name = base / "SOUL.md", "SOUL.md"
+    elif key == "user":
         path, name = base / "USER.md", "USER.md"
     elif key == "memory":
         path, name = base / "MEMORY.md", "MEMORY.md"
@@ -151,6 +160,8 @@ def read_projection(scope: str, key: str) -> tuple[str, str]:
 def list_projection(scope: str) -> list[dict]:
     base = scope_dir(scope)
     files = [
+        {"key": "identity", "name": "IDENTITY.md"},
+        {"key": "soul", "name": "SOUL.md"},
         {"key": "user", "name": "USER.md"},
         {"key": "memory", "name": "MEMORY.md"},
         {"key": "dreams", "name": "DREAMS.md"},
@@ -221,10 +232,43 @@ def _scope_parts(scope: str) -> list[str]:
 
 def _known_scopes(store: Store) -> list[str]:
     found = [row["scope"] for row in store.scopes()]
-    for scope in store.dream_scopes():
+    for scope in store.dream_scopes() + store.persona_scopes():
         if scope not in found:
             found.append(scope)
     return found
+
+
+def _identity_md(scope: str, text: str) -> str:
+    lines = [
+        "# IDENTITY",
+        "",
+        "Who the agent is in this scope. Evergreen. Not a fact log.",
+        f"Scope: `{scope}`",
+        "",
+    ]
+    if text.strip():
+        lines.append(text.strip())
+    else:
+        lines.append("_Unset._")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _soul_md(scope: str, text: str) -> str:
+    lines = [
+        "# SOUL",
+        "",
+        "Voice, stance, and boundaries. Evergreen. Not a transcript.",
+        "If this scope is a project, global voice still applies. Project wins on conflict.",
+        f"Scope: `{scope}`",
+        "",
+    ]
+    if text.strip():
+        lines.append(text.strip())
+    else:
+        lines.append("_Unset._")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _user_md(scope: str, rows: list[dict]) -> str:

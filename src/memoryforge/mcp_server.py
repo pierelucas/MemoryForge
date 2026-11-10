@@ -14,12 +14,12 @@ def build_mcp() -> MCPServer:
     mcp = MCPServer(
         "MemoryForge",
         instructions=(
-            "Local memory with a readable Markdown vault: USER.md, MEMORY.md, daily notes, DREAMS.md. "
-            "Call memory_brief at session start. "
-            "Call memory_add for a durable fact, preference, decision, convention, or debug lesson. "
-            "Call memory_note for a working note that dreaming may promote later. "
+            "Local memory and persona. Read the session card from memory_brief before working. "
+            "Global persona applies everywhere. Project persona wins on conflict. "
+            "Call memory_add for a durable fact. Call memory_note for a daily note. "
+            "Call memory_persona_set when the user states a name, vibe, or voice. "
             "Call memory_update when a stored fact changed and you know its id. "
-            "Do not store secrets or ephemeral task state. "
+            "Do not store secrets or ephemeral task state. Do not edit vault files. "
             "Pass scope as 'global' or 'project:host/owner/repo'."
         ),
         version=__version__,
@@ -110,9 +110,23 @@ def build_mcp() -> MCPServer:
             return _error(f"Unbekannte Id: {memory_id.strip()}")
         return _dump(_public(row))
 
-    @mcp.tool(description="Compact session-start card: pinned memories plus recent ones.")
+    @mcp.tool(description="Set identity or soul for a scope. Empty text clears that slot. Dreaming does not change this.")
+    def memory_persona_set(slot: str, text: str, scope: str | None = None) -> str:
+        """Set who the agent is in this scope.
+
+        slot is 'identity' (name, vibe, emoji) or 'soul' (voice and boundaries).
+        Use global for every repo, or project:host/owner/repo for one repository.
+        """
+        resolved = _scope_or_detect(scope)
+        try:
+            row = get_service().set_persona(resolved, slot, text)
+        except ValueError as exc:
+            return _error(str(exc))
+        return _dump({"scope": resolved, "slot": slot, "cleared": row is None, "persona": row})
+
+    @mcp.tool(description="Session card: persona, directives, standing facts, recent notes. Read card first.")
     def memory_brief(scope: str | None = None) -> str:
-        """Return the memories an agent should read before working.
+        """Return the operating context an agent should read before working.
 
         Pass the project scope when you know the git remote. Otherwise the working directory is used.
         """
@@ -121,6 +135,8 @@ def build_mcp() -> MCPServer:
         return _dump(
             {
                 "scope": card["scope"],
+                "card": card.get("card") or "",
+                "persona": card.get("persona") or {},
                 "memories": [_public(row) for row in card["memories"]],
                 "directives": [_public(row) for row in card.get("directives", [])],
                 "durable": [_public(row) for row in card.get("durable", [])],

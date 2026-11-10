@@ -19,6 +19,7 @@ def test_mcp_exposes_the_tools():
         "memory_forget",
         "memory_pin",
         "memory_brief",
+        "memory_persona_set",
     }
 
 

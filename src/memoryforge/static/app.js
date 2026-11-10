@@ -15,6 +15,17 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+const starter = document.querySelector("#persona-starter");
+const soul = document.querySelector("textarea[name=soul]");
+if (starter && soul) {
+  starter.addEventListener("click", () => {
+    if (!soul.value.trim()) {
+      soul.value = "Be precise. Have a take when the evidence supports it.\nNo filler. No invented facts. No secrets.\nProject conventions beat generic advice.";
+    }
+    soul.focus();
+  });
+}
+
 const provider = document.querySelector("#provider");
 const baseUrl = document.querySelector("#base_url");
 const modelChoice = document.querySelector("#model_choice");

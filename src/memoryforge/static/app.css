@@ -91,12 +91,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  display: grid;
-  place-items: center;
-  font-weight: 600;
-  font-size: 15px;
+  display: block;
 }
 .rail-label {
   margin: 4px 8px 0;
@@ -523,6 +518,41 @@ details form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px;
 .dream .meta { margin-bottom: 8px; }
 .card { transition: border-color 0.15s ease; }
 .card:hover { border-color: var(--line-strong); }
+.identity-strip { margin: 10px 0 0; }
+.identity-strip a {
+  color: var(--text);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 122, 26, 0.4);
+  background: var(--accent-dim);
+}
+.identity-strip a:hover { border-color: var(--accent); }
+.persona-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 14px;
+  align-items: start;
+}
+.card-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--muted);
+  background: #101218;
+  border-radius: 12px;
+  padding: 12px;
+  max-height: 34rem;
+  overflow: auto;
+}
+@media (max-width: 800px) {
+  .persona-grid { grid-template-columns: 1fr; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .switch-ui::after, .card { transition: none; }

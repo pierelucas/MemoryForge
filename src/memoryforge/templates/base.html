@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MemoryForge{% endblock %}</title>
-  <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=4">
+  <link rel="icon" href="/static/favicon.svg?v=5" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v=5">
 </head>
 <body>
   <div class="shell">
     <aside class="rail">
       <a class="mark" href="/">
-        <span class="mark-seal" aria-hidden="true">M</span>
+        <img class="mark-seal" src="/static/favicon.svg?v=5" alt="">
         <span>MemoryForge</span>
       </a>
       <p class="rail-label">{{ t('nav.scopes') }}</p>
@@ -35,6 +35,7 @@
         {% endfor %}
       </nav>
       <div class="rail-foot">
+        <a class="scope {% if section == 'persona' %}is-active{% endif %}" href="/persona?scope={{ (active if active and active != 'settings' else 'global') | urlencode }}">{{ t('nav.persona') }}</a>
         <a class="scope {% if section == 'files' %}is-active{% endif %}" href="/files{% if active and active != 'settings' %}?scope={{ active | urlencode }}{% endif %}">{{ t('nav.files') }}</a>
         <a class="scope {% if active == 'settings' %}is-active{% endif %}" href="/settings">{{ t('nav.settings') }}</a>
       </div>

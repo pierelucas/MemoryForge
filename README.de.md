@@ -12,6 +12,8 @@ Die Dateien folgen OpenClaw und Claude Code:
 
 | Schicht | Datei | Suche |
 |---|---|---|
+| Identität | `IDENTITY.md` | Name, Ton, Zeichen. Immergrün. Kein Fakt. |
+| Stimme | `SOUL.md` | Haltung und Grenzen. Projekt gewinnt über global. |
 | Profil | `USER.md` | immergrüne Vorlieben, als Anweisung geschrieben |
 | Dauerhaft | `MEMORY.md` | immergrüne Fakten, Entscheidungen, Konventionen, Lehren |
 | Tag | `memory/YYYY-MM-DD.md` | Arbeitsnotizen, Halbwertszeit 30 Tage |
@@ -91,7 +93,7 @@ memoryforge doctor
 
 Standardadresse: <http://127.0.0.1:4737/>
 
-In der Leiste stehen die Scopes. **Alle** zeigt alles. **Global** nur globale Fakten. Die Schicht-Tabs trennen dauerhafte Fakten, Tagesnotizen und das Traumtagebuch. **Dateien** zeigt die Markdown-Projektion; sie zu bearbeiten schreibt nicht zurück. Ein Repository zeigt dieses Repository und darunter die globalen Fakten, die ein Agent dort mitliest. Die Suche in einem Repository durchsucht beide. **Scope löschen** auf einer Scope-Seite blendet nach einer Bestätigungsseite alle aktiven Fakten darin aus. Die Zeilen bleiben in der Datei. **Alle** ist eine Ansicht, kein Scope, und hat deshalb keinen Lösch-Link.
+In der Leiste stehen die Scopes. **Alle** zeigt alles. **Global** nur globale Fakten. **Persona** ist die Stimme für diesen Scope. Die Schicht-Tabs trennen dauerhafte Fakten, Tagesnotizen und das Traumtagebuch. **Dateien** zeigt die Markdown-Projektion; sie zu bearbeiten schreibt nicht zurück. Ein Repository zeigt dieses Repository und darunter die globalen Fakten, die ein Agent dort mitliest. Die Suche in einem Repository durchsucht beide. **Scope löschen** auf einer Scope-Seite blendet nach einer Bestätigungsseite alle aktiven Fakten darin aus. Die Zeilen bleiben in der Datei. **Alle** ist eine Ansicht, kein Scope, und hat deshalb keinen Lösch-Link.
 
 **Merken** speichert einen Fakt im Scope über dem Knopf. **Anderer Scope** ist für einen Namen, den es noch nicht gibt. Eine Git-URL in dem Feld wird umgeschrieben. `/` setzt den Fokus in die Suche. Strg+Enter oder Cmd+Enter speichert die Notiz, in der du gerade tippst.
 
@@ -141,6 +143,7 @@ memoryforge vault
 ## CLI
 
 ```bash
+memoryforge persona set soul "Präzise. Kein Fülltext." --scope global
 memoryforge note "Heute den Port geprüft."
 memoryforge add "Bevorzuge pnpm statt npm."
 memoryforge add --scope global "Antworten dürfen Deutsch sein."
@@ -195,7 +198,8 @@ In `~/.config/opencode/opencode.json` (OpenCode 2) oder in der Projekt-Config:
 Die Werkzeuge tun nichts, wenn der Agent sie nicht aufruft. In die Projektanweisung:
 
 ```text
-At session start call memory_brief. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
+At session start call memory_brief and read card first. Pass scope project:<host/owner/repo> when you know the git remote, otherwise omit it.
+Call memory_persona_set when the user states a name, vibe, or voice. Global applies everywhere. Project wins on conflict.
 When you learn a durable preference, decision, convention, or debug lesson, call memory_add with one or a few sentences.
 Call memory_note for a working note that should not enter MEMORY.md until dreaming promotes it.
 When a stored fact changed and you know its id, call memory_update instead of adding a second copy.
@@ -204,7 +208,8 @@ Do not store secrets, tokens, or ephemeral task state.
 
 | Werkzeug | Zweck |
 |---|---|
-| `memory_brief` | Session-Start: Angeheftetes, dann die letzten Fakten |
+| `memory_brief` | Session-Start: zuerst `card` lesen. Persona, Anweisungen, angeheftete Fakten, letzte Notizen |
+| `memory_persona_set` | `identity` oder `soul` setzen. Leerer Text löscht den Slot |
 | `memory_search` | Bedeutung plus Volltext |
 | `memory_add` | dauerhaften Fakt speichern |
 | `memory_note` | Tagesnotiz speichern; Träumen kann sie später befördern |
